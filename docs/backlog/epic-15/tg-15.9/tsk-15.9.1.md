@@ -1,0 +1,5 @@
+- [ ] **TSK-15.9.1** One Close path removes everything a group created
+  - files: `internal/line/close_group.go`, `internal/line/ship.go`, `internal/conductor/abandon.go`, `internal/run/sync.go`, `internal/line/close_group_test.go`
+  - accept: line.Close(root, group) removes the worktree, the refs/komodo tip, the lease, the run folder, briefs, results, attempts, task worktrees and the session temp root; ship after a landing, abandon and sync's merged-group path all call it and nothing else deletes those
+  - done_when: `go test ./internal/line/... ./internal/conductor/... ./internal/run/...`
+  - priority: H

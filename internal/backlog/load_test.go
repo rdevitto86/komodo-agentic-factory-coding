@@ -16,18 +16,44 @@ func writeFile(t *testing.T, path, text string) {
 	}
 }
 
-func TestLoadRootReadsGroupFilesWhenPresent(t *testing.T) {
+// seedEpic writes an epic index file under root for the given epic and version.
+func seedEpic(t *testing.T, root, epicID, version string) {
+	t.Helper()
+	writeFile(t, filepath.Join(EpicDir(root, epicID), EpicFileName),
+		"## ["+epicID+"] Epic "+epicID+" [READY]\n\n```yaml\nversion: "+version+"\ntype: feat\n```\n\nThe goal.\n")
+}
+
+// seedGroup writes a group index file and one file per task text under the group's folder.
+func seedGroup(t *testing.T, root, groupID, header string, tasks map[string]string) {
+	t.Helper()
+	dir := GroupDirPath(root, groupID)
+	writeFile(t, filepath.Join(dir, GroupFileName), header)
+	for id, text := range tasks {
+		writeFile(t, filepath.Join(dir, TaskFileName(id)), text)
+	}
+}
+
+func TestLoadRootReadsTheTreeWhenPresent(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),
-		"## [TG-01.1] Example group [P: H] [READY]\n\n"+
-			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** Do the thing\n  - files: `a.go`\n  - checks: `go test ./...`\n")
+	seedEpic(t, root, "EPIC-01", "1.0.0")
+	seedGroup(t, root, "TG-01.1", "## [TG-01.1] Example group [P: H] [READY]\n\n```yaml\ntype: feat\ndepends_on: []\n```\n",
+		map[string]string{"TSK-01.1.1": "- [ ] **TSK-01.1.1** Do the thing\n  - files: `a.go`\n  - checks: `go test ./...`\n"})
 	parsed, err := LoadRoot(root)
 	if err != nil {
 		t.Fatalf("LoadRoot: %v", err)
 	}
 	if len(parsed.Groups) != 1 || parsed.Groups[0].ID != "TG-01.1" {
 		t.Fatalf("groups = %+v", parsed.Groups)
+	}
+	if got := parsed.Groups[0].Version(); got != "1.0.0" {
+		t.Fatalf("version = %q, want the epic's 1.0.0 inherited", got)
+	}
+	if parsed.Groups[0].EpicID != "EPIC-01" {
+		t.Fatalf("epic = %q, want EPIC-01 from the folder", parsed.Groups[0].EpicID)
+	}
+	epic, ok := parsed.Epic("EPIC-01")
+	if !ok || epic.Version() != "1.0.0" || epic.Title != "Epic EPIC-01" || epic.Goal != "The goal." {
+		t.Fatalf("epic = %+v", epic)
 	}
 	task, ok := parsed.Task("TSK-01.1.1")
 	if !ok {
@@ -48,11 +74,12 @@ func TestLoadRootReadsGroupFilesWhenPresent(t *testing.T) {
 // the group heading's, so a BLOCKED task in a READY group never reaches the line's queue.
 func TestATasksOwnStatusAndPriorityOverrideItsGroups(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),
-		"## [TG-01.1] Example group [P: M] [READY]\n\n"+
-			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** Wait for a person\n  - files: `a.go`\n  - priority: H\n  - status: BLOCKED\n"+
-			"- [ ] **TSK-01.1.2** Do the thing\n  - files: `b.go`\n")
+	seedEpic(t, root, "EPIC-01", "1.0.0")
+	seedGroup(t, root, "TG-01.1", "## [TG-01.1] Example group [P: M] [READY]\n\n```yaml\ntype: feat\ndepends_on: []\n```\n",
+		map[string]string{
+			"TSK-01.1.1": "- [ ] **TSK-01.1.1** Wait for a person\n  - files: `a.go`\n  - priority: H\n  - status: BLOCKED\n",
+			"TSK-01.1.2": "- [ ] **TSK-01.1.2** Do the thing\n  - files: `b.go`\n",
+		})
 	parsed, err := LoadRoot(root)
 	if err != nil {
 		t.Fatalf("LoadRoot: %v", err)
@@ -69,11 +96,9 @@ func TestATasksOwnStatusAndPriorityOverrideItsGroups(t *testing.T) {
 
 func TestLoadRootCarriesModeBaseTierAndFacets(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),
-		"## [TG-01.1] Example group [P: H] [READY]\n\n"+
-			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\nmode: single\nbase: feat/1.0.0\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** Do the thing\n  - files: `a.go`\n  - checks: `go test ./...`\n"+
-			"  - tier: heavy\n  - facets: go, docs\n")
+	seedEpic(t, root, "EPIC-01", "1.0.0")
+	seedGroup(t, root, "TG-01.1", "## [TG-01.1] Example group [P: H] [READY]\n\n```yaml\ntype: feat\nmode: single\nbase: feat/1.0.0\ndepends_on: []\n```\n",
+		map[string]string{"TSK-01.1.1": "- [ ] **TSK-01.1.1** Do the thing\n  - files: `a.go`\n  - checks: `go test ./...`\n  - tier: heavy\n  - facets: go, docs\n"})
 	parsed, err := LoadRoot(root)
 	if err != nil {
 		t.Fatalf("LoadRoot: %v", err)
@@ -97,22 +122,30 @@ func TestLoadRootCarriesModeBaseTierAndFacets(t *testing.T) {
 	}
 }
 
-// TestLoadRootIgnoresALegacyBacklogFile proves LoadRoot reads only docs/backlog group files, a
-// legacy backlog file left at root never read except by komodo migrate.
-func TestLoadRootIgnoresALegacyBacklogFile(t *testing.T) {
+// TestLoadRootIgnoresFlatAndLegacyFiles proves LoadRoot reads only the tree: a flat group file or a
+// legacy backlog file is listed for migrate, never loaded as a group.
+func TestLoadRootIgnoresFlatAndLegacyFiles(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, LegacyName),
 		"## [EPIC-01] Phase 0\n\n### [TG-01.1] Legacy group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
-	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-02.1-group.md"),
-		"## [TG-02.1] Group file group [P: H] [READY]\n\n"+
-			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-02\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-02.1.1** A task\n  - files: `a.go`\n")
+	writeFile(t, filepath.Join(root, GroupFilesDir, "TG-03.1-flat.md"),
+		"## [TG-03.1] Flat group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-03\ndepends_on: []\n```\n")
+	seedEpic(t, root, "EPIC-02", "1.0.0")
+	seedGroup(t, root, "TG-02.1", "## [TG-02.1] Tree group [P: H] [READY]\n\n```yaml\ntype: feat\ndepends_on: []\n```\n",
+		map[string]string{"TSK-02.1.1": "- [ ] **TSK-02.1.1** A task\n  - files: `a.go`\n"})
 	parsed, err := LoadRoot(root)
 	if err != nil {
 		t.Fatalf("LoadRoot: %v", err)
 	}
 	if len(parsed.Groups) != 1 || parsed.Groups[0].ID != "TG-02.1" {
-		t.Fatalf("groups = %+v, want only the group file's group", parsed.Groups)
+		t.Fatalf("groups = %+v, want only the tree's group", parsed.Groups)
+	}
+	tree, err := LoadTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Flat) != 1 || filepath.Base(tree.Flat[0]) != "TG-03.1-flat.md" {
+		t.Fatalf("flat = %v, want the one flat file listed for migrate", tree.Flat)
 	}
 }
 
@@ -128,14 +161,17 @@ func TestLoadRootIsEmptyWithNoGroupFiles(t *testing.T) {
 	}
 }
 
-func TestExistsReportsGroupFiles(t *testing.T) {
+func TestExistsReportsGroupFolders(t *testing.T) {
 	root := t.TempDir()
 	if Exists(root) {
-		t.Fatal("want false with no group files")
+		t.Fatal("want false with no groups")
 	}
-	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-03.1-group.md"),
-		"## [TG-03.1] Group [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-03\ndepends_on: []\n```\n")
+	seedEpic(t, root, "EPIC-03", "1.0.0")
+	if Exists(root) {
+		t.Fatal("want false with an epic but no group")
+	}
+	seedGroup(t, root, "TG-03.1", "## [TG-03.1] Group [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\ndepends_on: []\n```\n", nil)
 	if !Exists(root) {
-		t.Fatal("want true with a docs/backlog/ group file")
+		t.Fatal("want true with a group folder")
 	}
 }

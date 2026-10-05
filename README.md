@@ -1,6 +1,6 @@
 # komodo-agentic-factory-coding
 
-Komodo's code assembly line. Work enters as tasks in `docs/backlog/` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
+Komodo's code assembly line. Work enters as tasks in the `docs/backlog/` tree, one folder per epic, one folder per group, one file per task, and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
 This README is the day-to-day guide; each Design bullet points into the specs that define V1: `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through its betas to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
 
@@ -25,13 +25,13 @@ The full design lives in `docs/hld.md` and `docs/lld.md`; `docs/decisions/` hold
 
 ## Pull requests
 
-1.0 was built through PR #103 and six stacked group PRs, now merged. Each group ships as one PR from its own `<type>/<slug>` branch, cut from the group's base. `close --group` opens it with the report as the body. Merging is the human's button; nothing runs on GitHub.
+1.0 was built through PR #103 and six stacked group PRs, since merged. Each group merges into its epic branch, `feat/<version>`, as a merge commit carrying its ticked task list; the epic's pull request carries the goal from `EPIC.md` and one section per landed group. Merging that PR is the human's button; nothing runs on GitHub.
 
 The repository ruleset must cover `main` only, which `komodo doctor --remote` audits; it also fails when no ruleset or branch protection covers `main` at all.
 
 ## Versions
 
-Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly. `komodo/rules/backlog.md#choosing-a-version` is the rule a planner follows to pick a group's segment and phase; this section names only this repo's own history through each one.
+Every version here is SemVer with a prerelease stage, and an epic's `version:` matches its changelog heading exactly. `komodo/rules/backlog.md#choosing-a-version` is the rule a planner follows to pick an epic's segment and phase; this section names only this repo's own history through each one.
 
 - **Alpha, `x.y.z-alpha.n`.** The shape still moves. V1 restarts the rebuild at `1.0.0-alpha.5` while phases 0 to 3 land; the prototype's four releases are renumbered `1.0.0-alpha.1`–`.4` (decision 0010).
 - **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land while `komodo eval` runs on every platform. V1's beta starts at `1.0.0-beta.2`, since the untagged `1.0.0-beta.1` heading is retitled as history and never reused (decision 0010).
@@ -53,7 +53,7 @@ One vocabulary, used the same way in this file, the backlog, the code, the skill
 | Role | One markdown file: what a machine is at a station or in a session |
 | Skill | A markdown procedure a session or a brief can load |
 | Facet | What detection selects for a platform: a skill, appendices, commands |
-| Guard | The one agent hook on shell, edit, write, and spawn |
+| Guard | The one PreToolUse hook; status, prune, format, task-check, evidence and time-warning hooks each have one job |
 | Gate | The local precheck before a commit and a push |
 | Ledger | The two local metrics files |
 
@@ -76,7 +76,7 @@ From the root of the new repo, a git repository:
 ```bash
 komodo init --name "Auth API"      # AGENTS.md, docs/backlog, CHANGELOG.md, docs/ specs, the PR template; keeps any file that exists
 komodo install --host claude       # mount the repo on a host
-$EDITOR docs/backlog/TG-01.1-example-group.md  # replace the example group with the first real one; komodo lint checks it
+$EDITOR docs/backlog/epic-01/tg-01.1/TG.md  # replace the starter epic, group and tasks with the first real ones; komodo lint checks the tree
 komodo run                         # drive the line on the next ready group
 ```
 
@@ -88,7 +88,6 @@ komodo run TG-03.5          # headless, one group
 /run                        # in a session: the next ready group down the line
 /run TG-03.5                # one group
 /run TSK-03.5.2             # one task
-/review                     # QC and the reviewer on the current diff
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
@@ -97,7 +96,7 @@ komodo gate                 # build checks, lint, doctor, guard table, comments;
 
 With no target, `komodo run` drains every ready group in order: for each it builds
 the tasks, repairs review findings for up to `review_repairs` rounds, re-renders
-the host config when doctor reports drift, and opens one pull request per group.
+the host config when doctor reports drift, and merges each group into its epic branch.
 Merging is the only step a person does across a clean drain; `komodo sync`
 follows it automatically, fast-forwarding the root and rebuilding what drifted.
 
@@ -112,7 +111,7 @@ is spent, listing what it shipped and what it parked.
 |---|---|
 | `komodo/AGENTS.md`, `komodo/rules/` | Universal rules, the accessibility contract, the backlog grammar |
 | `komodo/roles/` | One file per role: tier, tools, session flag, schema, brief template |
-| `komodo/skills/` | `run`, `review`, `backlog`, `respond`, and one `standards-<x>` per language or domain |
+| `komodo/skills/` | `komodo`, `run`, `plan`, `respond`, `release`, `build`, `escalate`, `review-*`, and one `standards-<x>` per language or domain |
 | `komodo/policy.json` | The critical refs, config paths, and trailer patterns the guard reads |
 | `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
 | `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |

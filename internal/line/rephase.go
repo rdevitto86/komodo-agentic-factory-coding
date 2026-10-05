@@ -141,9 +141,10 @@ func runGH(client *pr.Client, args ...string) (string, error) {
 
 // fenceOpen and fenceClose bound a group's fenced yaml block.
 var (
-	fenceOpen   = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
-	fenceClose  = regexp.MustCompile("^```\\s*$")
-	versionLine = regexp.MustCompile(`^version:\s*\S*\s*$`)
+	epicFileHeading = regexp.MustCompile(`^##\s+\[EPIC-`)
+	fenceOpen       = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
+	fenceClose      = regexp.MustCompile("^```\\s*$")
+	versionLine     = regexp.MustCompile(`^version:\s*\S*\s*$`)
 )
 
 // setGroupVersion replaces the version line in the fenced block directly under heading, reporting
@@ -167,49 +168,29 @@ func setGroupVersion(lines []string, heading int, newVersion string) bool {
 	return false
 }
 
-// groupFileHeading matches a docs/backlog group file's own heading line.
-var groupFileHeading = regexp.MustCompile(`^##\s+\[TG-`)
-
-// rewriteGroupFileVersions rewrites newVersion into every docs/backlog group file whose epic
-// field names epicID, returning the paths it changed; a repo with no docs/backlog changes nothing.
+// rewriteGroupFileVersions rewrites newVersion into epicID's the epic index file, returning the path changed, none without it.
 func rewriteGroupFileVersions(root, epicID, newVersion string) ([]string, error) {
-	dir := filepath.Join(root, "docs", "backlog")
-	entries, err := os.ReadDir(dir)
+	path := filepath.Join(backlog.EpicDir(root, epicID), backlog.EpicFileName)
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var touched []string
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	heading := -1
+	for index, line := range lines {
+		if epicFileHeading.MatchString(line) {
+			heading = index
+			break
 		}
-		path := filepath.Join(dir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return touched, err
-		}
-		text := string(data)
-		if backlog.ParseGroupFile(text).EpicID != epicID {
-			continue
-		}
-		lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-		heading := -1
-		for index, line := range lines {
-			if groupFileHeading.MatchString(line) {
-				heading = index
-				break
-			}
-		}
-		if heading < 0 || !setGroupVersion(lines, heading, newVersion) {
-			continue
-		}
-		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
-			return touched, err
-		}
-		touched = append(touched, path)
 	}
-	return touched, nil
+	if heading < 0 || !setGroupVersion(lines, heading, newVersion) {
+		return nil, nil
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		return nil, err
+	}
+	return []string{path}, nil
 }

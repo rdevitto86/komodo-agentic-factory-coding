@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.4** The post-commit size check is gone; the lint caps replace it
+  - files: `internal/line/ship.go`, `internal/line/ship_test.go`
+  - accept: checkPRSize and its call are removed; a group over 20 declared files is refused by lint at ingest, never at ship
+  - done_when: `go test ./internal/line/...`, `go run ./cmd/komodo lint`
+  - priority: H

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.9.2** Prune sweeps expired leases, crash-left temp folders and old refusal logs
+  - files: `internal/doctor/prune.go`, `internal/lease/lease.go`, `internal/doctor/prune_test.go`
+  - accept: a lease past its lapse or whose holder is dead is removed; a `komodo-*` folder under the temp dir older than 24 hours is removed; guard-refusal files older than 7 days are removed; `.komodo/adhoc.jsonl` rotates at 1 MB
+  - done_when: `go test ./internal/doctor/... ./internal/lease/...`
+  - priority: H

@@ -6,29 +6,23 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
 
-// rephaseGroupFile is the first group's own docs/backlog file, carrying the epic's version too.
-const rephaseGroupFile = "## [TG-05.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-05\n```\n"
-
-// rephaseSecondGroupFile is the second group's own docs/backlog file, sharing the epic's version.
-const rephaseSecondGroupFile = "## [TG-05.2] Another group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-05\n```\n"
-
-// rephaseRepo builds a remoted repo with the epic branch already pushed and one group file.
+// rephaseRepo builds a remoted repo with the epic branch already pushed and an epic folder holding two groups.
 func rephaseRepo(t *testing.T) string {
 	t.Helper()
 	root := epicRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
-	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
+	if _, err := backlog.WriteEpic(root, backlog.EpicFile{ID: "EPIC-05", Title: "Phase 1", Status: "READY", Version: "2.0.0", Type: "feat"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "docs", "backlog", "TG-05.1-a-group.md"), []byte(rephaseGroupFile), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "docs", "backlog", "TG-05.2-another-group.md"), []byte(rephaseSecondGroupFile), 0o644); err != nil {
-		t.Fatal(err)
+	for id, title := range map[string]string{"TG-05.1": "A group", "TG-05.2": "Another group"} {
+		if _, err := backlog.WriteGroup(root, backlog.GroupFile{ID: id, Title: title, Priority: "C", Status: "READY", Type: "feat"}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return root
 }
@@ -61,19 +55,25 @@ func TestRephaseRewritesVersionsPushesAndRetargetsPulls(t *testing.T) {
 	if len(result.Groups) != 2 {
 		t.Fatalf("groups = %v, want both TG-05.1 and TG-05.2", result.Groups)
 	}
-	if len(result.GroupFiles) != 2 {
-		t.Fatalf("group files = %v, want both docs/backlog files rewritten", result.GroupFiles)
+	epicFile := filepath.Join(backlog.EpicDir(root, "EPIC-05"), backlog.EpicFileName)
+	if len(result.GroupFiles) != 1 || result.GroupFiles[0] != epicFile {
+		t.Fatalf("group files = %v, want the epic's EPIC.md alone rewritten", result.GroupFiles)
 	}
 	if len(result.Retargeted) != 1 || result.Retargeted[0] != "https://example.com/pull/15" {
 		t.Fatalf("retargeted = %v", result.Retargeted)
 	}
 
-	groupFile, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-05.1-a-group.md"))
+	epicText, err := os.ReadFile(epicFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(groupFile), "version: 3.0.0") {
-		t.Fatalf("group file = %s, want 3.0.0", groupFile)
+	if !strings.Contains(string(epicText), "version: 3.0.0") {
+		t.Fatalf("EPIC.md = %s, want 3.0.0", epicText)
+	}
+	for _, id := range []string{"TG-05.1", "TG-05.2"} {
+		if text, _ := os.ReadFile(groupPath(root, id)); strings.Contains(string(text), "version:") {
+			t.Fatalf("%s TG.md = %s, want no version line written into a group", id, text)
+		}
 	}
 
 	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/3.0.0"); err != nil {

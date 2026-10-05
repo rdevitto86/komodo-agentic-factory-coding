@@ -3,6 +3,7 @@ package conductor
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -178,6 +179,37 @@ func TestASplitThatTouchesAFileOutsideItsBacklogStopsTheGroup(t *testing.T) {
 	}
 	if len(*notes) != 1 || !strings.Contains((*notes)[0].Needs, "internal/conductor/escalate.go") {
 		t.Fatalf("notes = %+v, want one naming the file the split touched outside its backlog file", *notes)
+	}
+}
+
+// TestOutsideGroupFileAllowsANewSiblingGroupFolder proves a split may create a sibling group folder under
+// the epic, while the epic index file and an existing sibling's files stay refused.
+func TestOutsideGroupFileAllowsANewSiblingGroupFolder(t *testing.T) {
+	created := func(path string) string {
+		return "--- /dev/null\n+++ b/" + path + "\n@@ -0,0 +1,1 @@\n+x\n"
+	}
+	edited := func(path string) string {
+		return "--- a/" + path + "\n+++ b/" + path + "\n@@ -1,1 +1,1 @@\n-x\n+y\n"
+	}
+	own := edited("docs/backlog/epic-15/tg-15.1/TG.md") + created("docs/backlog/epic-15/tg-15.1/tsk-15.1.3.md")
+	sibling := created("docs/backlog/epic-15/tg-15.4/TG.md") + created("docs/backlog/epic-15/tg-15.4/tsk-15.4.1.md")
+	cases := []struct {
+		name string
+		diff string
+		want []string
+	}{
+		{"its own folder and a new sibling group", own + sibling, nil},
+		{"the epic file", own + edited("docs/backlog/epic-15/EPIC.md"), []string{"docs/backlog/epic-15/EPIC.md"}},
+		{"an existing sibling group", own + edited("docs/backlog/epic-15/tg-15.2/TG.md"), []string{"docs/backlog/epic-15/tg-15.2/TG.md"}},
+		{"another epic's new group", own + created("docs/backlog/epic-16/tg-16.1/TG.md"), []string{"docs/backlog/epic-16/tg-16.1/TG.md"}},
+		{"a file outside the backlog", own + created("internal/x.go"), []string{"internal/x.go"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := outsideGroupFile("TG-15.1", "", tc.diff); !slices.Equal(got, tc.want) {
+				t.Fatalf("outside = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

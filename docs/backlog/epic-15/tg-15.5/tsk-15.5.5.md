@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.5** Stacked groups rebase onto the epic branch after their parent lands
+  - files: `internal/conductor/integrate.go`, `internal/conductor/integrate_test.go`
+  - accept: StackBase is the epic branch unless a declared parent has not landed; Restack rebases a waiting child onto the epic branch once its parent's merge commit is on origin
+  - done_when: `go test ./internal/conductor/...`
+  - priority: H

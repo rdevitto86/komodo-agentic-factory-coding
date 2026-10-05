@@ -1,0 +1,5 @@
+- [ ] **TSK-15.8.3** Slot order is stable to volatile, matching the LLD
+  - files: `komodo/roles/builder.md`, `internal/line/brief.go`, `internal/line/brief_test.go`, `docs/lld.md`
+  - accept: the rendered order is frame, rules, standards, schema, then per task; the LLD's briefs table lists the same order
+  - done_when: `go test ./internal/line/...`, `go run ./cmd/komodo lint`
+  - priority: M

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 )
 
 // lensDiffAdding is the diff the lens fixtures read: a.go gains lines 2 and 3.
@@ -30,8 +33,9 @@ func lensRoot(t *testing.T, result string) string {
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(filepath.Join("docs", "backlog", "TG-90.1-a-group.md"),
-		"## [TG-90.1] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 3.0.0\nepic: EPIC-90\nbase: feat/base\ndepends_on: []\n```\n")
+	backlogtest.Seed(t, root, backlog.GroupFile{
+		ID: "TG-90.1", Title: "A group", Priority: "H", Status: "READY", Type: "feat", Version: "3.0.0", EpicID: "EPIC-90", Base: "feat/base",
+	})
 	write("a.go", "package a\n\nfunc Bad() {}\n")
 	if result != "" {
 		write(".komodo/results/TG-90.1-review.json", result)

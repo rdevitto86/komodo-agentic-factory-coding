@@ -13,11 +13,11 @@ import (
 	repopkg "komodo/internal/repo"
 )
 
-// commitGroupFile commits one group as its own docs/backlog file, the seed backlog.LoadRoot reads.
+// commitGroupFile commits one group as its backlog tree folder, the seed backlog.LoadRoot reads.
 func commitGroupFile(t *testing.T, root string, group backlog.GroupFile) {
 	t.Helper()
-	name := filepath.Join("docs", "backlog", group.ID+"-"+backlog.Slug(group.Title)+".md")
-	commit(t, root, name, backlog.RenderGroupFileDocument(group), "backlog")
+	backlogtest.Seed(t, root, group)
+	commitAll(t, root, "backlog")
 }
 
 // gitRepo builds a throwaway repository with one commit on main.

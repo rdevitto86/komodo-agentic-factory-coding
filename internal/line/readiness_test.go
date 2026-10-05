@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
 	"komodo/internal/plan"
@@ -70,7 +69,7 @@ func TestATaskAddedMidRunJoinsAWaveAfterThePinnedOnes(t *testing.T) {
 		t.Fatal(err)
 	}
 	late := "\n#### [TSK-05.1.4] Four [P: C] [READY]\n```yaml\nfiles: [c/four.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
-	backlogtest.SeedText(t, root, groupText+late)
+	reseed(t, root, groupText+late)
 	plan, err := planForGroup(root, "TG-05.1")
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +87,7 @@ func TestATaskClosedBeforeTheRunNeverJoinsALateWave(t *testing.T) {
 		t.Fatal(err)
 	}
 	shipped := "\n#### [TSK-05.1.0] Shipped [P: C] [DONE]\n```yaml\nfiles: [c/zero.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
-	backlogtest.SeedText(t, root, groupText+shipped)
+	reseed(t, root, groupText+shipped)
 	plan, err := planForGroup(root, "TG-05.1")
 	if err != nil {
 		t.Fatal(err)

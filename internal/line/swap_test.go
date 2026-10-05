@@ -194,7 +194,7 @@ func TestFacetSwapReachesTheStandardsSlotTheProfileSlotAndTheRender(t *testing.T
 			t.Fatalf("brief = %s, want no aws appendix before the task carries the facet", before.Text)
 		}
 
-		path := filepath.Join(root, "docs", "backlog", "TG-05.1-a-group.md")
+		path := taskPath(root, "TSK-05.1.1")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

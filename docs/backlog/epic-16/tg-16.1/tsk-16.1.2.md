@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.2** Proof: a 3-group plan runs unattended to a landed epic branch
+  - done_when: `go run ./cmd/komodo report`
+  - owner: human
+  - context: `was TSK-11.19.2`, `record the run id and the three landings`
+  - priority: H

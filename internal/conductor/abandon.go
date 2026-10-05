@@ -38,16 +38,16 @@ func Abandon(root, group string, at time.Time) error {
 		Items: []string{"abandoned on purpose with `komodo abandon`; its worktree and tip are removed"},
 		Needs: "a person to rework the group and set it READY",
 	}
-	path, before, noted, err := abandonNote(root, group, note)
+	dir, before, err := abandonNote(root, group, note)
 	if err != nil {
 		return err
 	}
 	// The note is written before the worktree and tip are gone, and restored if removing either fails.
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+	if err := dir.WriteNote(note); err != nil {
 		return err
 	}
 	if err := removeWorktreeAndTip(root, group, run); err != nil {
-		if restoreErr := os.WriteFile(path, []byte(before), 0o644); restoreErr != nil {
+		if restoreErr := os.WriteFile(dir.Path, before, 0o644); restoreErr != nil {
 			return errors.Join(err, restoreErr)
 		}
 		return err
@@ -81,16 +81,19 @@ func removeWorktreeAndTip(root, group string, run line.RunState) error {
 	return err
 }
 
-// abandonNote renders note into the group's own docs/backlog file, returning its path, its text
-// before the note, and the text to write there.
-func abandonNote(root, group string, note backlog.BlockerNote) (path, before, noted string, err error) {
-	groupPath, text, found, err := backlog.FindGroupFile(root, group)
+// abandonNote locates the group folder and proves note renders into its the group index file, returning the prior text.
+func abandonNote(root, group string, note backlog.BlockerNote) (backlog.GroupDir, []byte, error) {
+	dir, found, err := backlog.Locate(root, group)
 	if err != nil {
-		return "", "", "", err
+		return dir, nil, err
 	}
 	if !found {
-		return "", "", "", fmt.Errorf("%s is not in %s", group, backlog.GroupFilesDir)
+		return dir, nil, fmt.Errorf("%s is not in %s", group, backlog.GroupFilesDir)
 	}
-	out, err := backlog.AddGroupFileNote(text, note)
-	return groupPath, text, out, err
+	before, err := os.ReadFile(dir.Path)
+	if err != nil {
+		return dir, nil, err
+	}
+	_, err = backlog.AddGroupFileNote(string(before), note)
+	return dir, before, err
 }

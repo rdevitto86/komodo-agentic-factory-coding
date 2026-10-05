@@ -1,0 +1,5 @@
+- [ ] **TSK-15.4.6** Doctor fails when origin's default branch holds a backlog file
+  - files: `internal/doctor/doctor.go`, `internal/doctor/doctor_test.go`
+  - accept: with --remote, doctor lists every docs/backlog path on origin's default branch as a problem and names `komodo sync` as the fix; `komodo sync` opens the cleanup PR
+  - done_when: `go test ./internal/doctor/...`
+  - priority: H

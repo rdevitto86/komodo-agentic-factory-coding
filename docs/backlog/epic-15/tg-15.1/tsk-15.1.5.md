@@ -1,0 +1,5 @@
+- [x] **TSK-15.1.5** komodo init ships a starter epic, group and two tasks, and the test seeder writes the tree
+  - files: `templates/project/docs/backlog/epic-01/EPIC.md`, `templates/project/docs/backlog/epic-01/tg-01.1/TG.md`, `templates/project/docs/backlog/epic-01/tg-01.1/tsk-01.1.1.md`, `templates/project/docs/backlog/epic-01/tg-01.1/tsk-01.1.2.md`, `internal/backlog/backlogtest/backlogtest.go`, `cmd/komodo/init_test.go`
+  - accept: a fresh repo after komodo init lints clean; backlogtest.Seed writes an EPIC.md per epic and a folder per group
+  - done_when: `go test ./cmd/komodo/...`
+  - priority: H

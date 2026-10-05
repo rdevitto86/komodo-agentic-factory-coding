@@ -5,29 +5,32 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 )
 
-// refinementGroup is one REFINEMENT group file with tasks open tasks.
-func refinementGroup(id string, tasks int) string {
-	var body strings.Builder
-	fmt.Fprintf(&body, "## [%s] A group [P: M] [REFINEMENT]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-70\ndepends_on: []\n```\n\n", id)
+// refinementGroup is one REFINEMENT group of an epic id with tasks open tasks.
+func refinementGroup(id string, tasks int) backlog.GroupFile {
+	group := backlog.GroupFile{ID: id, Title: "A group", Priority: "M", Status: "REFINEMENT", Type: "fix", Version: "1.0.0", EpicID: "EPIC-70"}
 	for index := 1; index <= tasks; index++ {
-		fmt.Fprintf(&body, "- [ ] **TSK-%s.%d** Task %d\n", strings.TrimPrefix(id, "TG-"), index, index)
+		group.Tasks = append(group.Tasks, backlog.GroupTask{
+			ID: fmt.Sprintf("TSK-%s.%d", strings.TrimPrefix(id, "TG-"), index), Title: fmt.Sprintf("Task %d", index),
+		})
 	}
-	return body.String()
+	return group
 }
 
 func TestCheckStalledBacklogFlagsAPileAndAnUntouchedGroup(t *testing.T) {
 	root := gitRepo(t)
-	write(t, root, "docs/backlog/TG-70.1-a.md", refinementGroup("TG-70.1", 12))
-	write(t, root, "docs/backlog/TG-70.2-b.md", refinementGroup("TG-70.2", 12))
+	backlogtest.Seed(t, root, refinementGroup("TG-70.1", 12), refinementGroup("TG-70.2", 12))
 	commitAll(t, root, "plan")
 	if got := checkStalledBacklog(root, time.Now()); len(got) != 0 {
 		t.Fatalf("problems = %+v; 24 fresh REFINEMENT tasks are a plan, not a pile", got)
 	}
 	for index := 3; index <= 6; index++ {
 		id := fmt.Sprintf("TG-70.%d", index)
-		write(t, root, "docs/backlog/"+id+"-x.md", refinementGroup(id, 12))
+		backlogtest.Seed(t, root, refinementGroup(id, 12))
 	}
 	commitAll(t, root, "more")
 	got := checkStalledBacklog(root, time.Now().Add(15*24*time.Hour))

@@ -297,26 +297,52 @@ func TestScopeRunsAgainstTheBranchsOwnForkPoint(t *testing.T) {
 }
 
 func TestScopeNeverCountsABacklogTick(t *testing.T) {
-	const open = "## [TG-1] G\n\n- [ ] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n"
+	const (
+		task = "docs/backlog/epic-1/tg-1.1/tsk-1.1.1.md"
+		open = "- [ ] **TSK-1.1.1** One\n  - files: `a.go`\n"
+	)
 	cases := []struct {
 		name     string
 		edited   string
 		problems int
 	}{
-		{"a tick", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n", 0},
-		{"a tick and a retitled task", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Renamed\n", 1},
+		{"a tick", "- [x] **TSK-1.1.1** One\n  - files: `a.go`\n", 0},
+		{"a tick and a retitled task", "- [x] **TSK-1.1.1** Renamed\n  - files: `a.go`\n", 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			worktree, _ := initRepo(t, map[string]string{"docs/backlog/TG-1-g.md": open})
+			worktree, _ := initRepo(t, map[string]string{task: open})
 			base := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
-			writeFile(t, worktree, "docs/backlog/TG-1-g.md", tc.edited)
+			writeFile(t, worktree, task, tc.edited)
 			writeFile(t, worktree, "a.go", "package a\n")
-			commitAll(t, worktree, "close TSK-1.1")
+			commitAll(t, worktree, "close TSK-1.1.1")
 			if problems := Scope(worktree, base, []string{"a.go"}); len(problems) != tc.problems {
 				t.Fatalf("problems = %v, want %d", problems, tc.problems)
 			}
 		})
+	}
+}
+
+// TestOnlyTicksReadsANestedTaskFile proves a tick anywhere under docs/backlog counts, while a file
+// elsewhere or one whose heading changed does not.
+func TestOnlyTicksReadsANestedTaskFile(t *testing.T) {
+	const (
+		task  = "docs/backlog/epic-12/tg-12.3/tsk-12.3.2.md"
+		group = "docs/backlog/epic-12/tg-12.3/TG.md"
+		open  = "- [ ] **TSK-12.3.2** Two\n"
+	)
+	worktree, _ := initRepo(t, map[string]string{
+		task: open, group: "## [TG-12.3] G [P: M] [READY]\n", "notes/todo.md": open,
+	})
+	base := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
+	writeFile(t, worktree, task, "- [x] **TSK-12.3.2** Two\n")
+	writeFile(t, worktree, group, "## [TG-12.3] G [P: M] [DONE]\n")
+	writeFile(t, worktree, "notes/todo.md", "- [x] **TSK-12.3.2** Two\n")
+	commitAll(t, worktree, "tick")
+	for path, want := range map[string]bool{task: true, group: false, "notes/todo.md": false} {
+		if got := onlyTicks(worktree, base, path); got != want {
+			t.Fatalf("onlyTicks(%s) = %v, want %v", path, got, want)
+		}
 	}
 }
 

@@ -8,48 +8,57 @@ How each part works. A builder reads one section of this file through a task's `
 
 ### Task groups
 
-A task group is 1 to 12 tasks (REQ-8), about the size of one engineering story: typically 2 to 6, such as the core change, its tests, validation and deployment. The group's task list is the builder's brief and the reviewer's yardstick. Each task is a checkbox that only the conductor ticks, after the task's checks pass (REQ-10).
+A task group is 1 to 12 tasks (REQ-8), about the size of one engineering story: typically 2 to 6, such as the core change, its tests, validation and deployment. The group's task list is the builder's brief and the reviewer's yardstick. Each task is a checkbox that only the conductor ticks, after the task's checks pass (REQ-10). A group lives in its own folder under its epic (decision 0014):
 
 ````markdown
-## [TG-04.1] Tokens report their expiry [P: H] [READY]
+docs/backlog/epic-04/EPIC.md
+## [EPIC-04] Tokens expire [READY]
+```yaml
+version: 1.4.0        # the version every group under this epic ships; the epic branch is feat/<version>
+type: feat            # optional
+groups_max: 6         # optional, default 6
+```
+One paragraph: the goal. It becomes the epic pull request's title and body.
 
+docs/backlog/epic-04/tg-04.1/TG.md
+## [TG-04.1] Tokens report their expiry [P: H] [READY]
 ```yaml
 type: feat
-version: 1.4.0
-epic: EPIC-04
-depends_on: []        # groups whose unmerged work this one needs; its PR stacks on theirs
+mode: parallel
+base: ""
+depends_on: []        # groups whose unmerged work this one needs; its branch stacks on theirs
 ```
 
+docs/backlog/epic-04/tg-04.1/tsk-04.1.1.md
 - [ ] **TSK-04.1.1** Tokens know when they expire
   - files: `internal/token/`
   - accept: Expired is true at or after ExpiresAt
-- [ ] **TSK-04.1.2** An expired token gets a 401
-  - files: `internal/api/auth.go`, `internal/api/auth_test.go`
+  - done_when: `go test ./internal/token/...`
 ````
 
-A task needs a title and its files (REQ-9). `accept` lines are optional; they feed the correctness lens along with the PRD. Hand-written `checks` add to the derived ones. The group heading carries one of three statuses: READY, BLOCKED or REFINEMENT; the conductor tracks finer states in [Group states](#group-states). The exact grammar lands with the ingest rewrite, and `komodo lint` enforces it.
+A task needs a title and its files (REQ-9). `accept` lines are optional; they feed the correctness lens along with the PRD. Hand-written `checks` add to the derived ones. The group heading carries one of three statuses: READY, BLOCKED or REFINEMENT; the conductor tracks finer states in [Group states](#group-states). `TG.md` carries no `version` and no `epic`: both come from `EPIC.md`, and `komodo lint` refuses them on a group. Folder and file names are the lower-cased IDs and must match the IDs inside. A group's number places it under its epic, a task's number places it in its group, and task files sort numerically. A group's open tasks declare at most 20 unique files, a ticked task's files not counted, and an epic holds at most `groups_max` groups; lint refuses more. The embedded backlog rule holds the exact grammar, and `komodo lint` enforces it.
 
 ### The backlog
 
-The backlog is a committed plan that keeps agents in sync across workloads (decision 0004). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together. A group's PR never edits `CHANGELOG.md`; only a release writes it, describing what the version ships. There is no index and no archive: `komodo backlog` lists the open groups.
+The backlog is a committed plan that keeps agents in sync across workloads (decision 0004). It is a tree under `docs/backlog/`: one folder per epic, one folder per group inside it, one file per task (decision 0014). People and the orchestrator write it through `/plan` or `komodo add`: `komodo add EPIC-15 "title" --version 1.0.0-beta.6` creates an epic, `komodo add TG-15.3 "title"` a group under its epic, and `komodo add TG-15.3 "task title" --files a,b --done-when "go test ./..."` the next task file. `komodo migrate` moves a flat backlog, `BACKLOG.md` or TODO.md into the tree and leaves the source for a person to remove; a flat file left under `docs/backlog/` is a lint note and a doctor warning. Plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's merge commit therefore shows the code and the completed task list together. No group edits `CHANGELOG.md`; only a release writes it, describing what the version ships. There is no index and no archive: `komodo backlog` lists the open groups.
 
 Cleanup is mechanical (REQ-46):
 
 | Leftover | Removed when |
 |---|---|
-| An epic's group files | The PR of the epic's last open group deletes them; a group with no epic deletes its own file |
-| An epic's files that outlived it | `komodo sync` opens a cleanup PR, for example when an epic's last two groups finished together |
-| A group's detached worktree and its `refs/komodo/<branch>` tip | Ship finishes, or the next run starts, for merged or abandoned groups; Komodo never deletes a branch under `refs/heads/` (decision 0012) |
+| An epic's folder, `docs/backlog/epic-NN/` | The ship commit of the epic's last open group deletes the whole folder; an epic PR adds no backlog file, so `main` never holds one |
+| An epic's folder that outlived it | `komodo sync` opens a cleanup PR, for example when an epic's last two groups finished together |
+| A group's detached worktree and its `refs/komodo/<branch>` tip | Ship finishes, or the next run starts, for merged or abandoned groups. Prune deletes a local branch only when its remote is deleted or its PR merged, its tip equals the last pushed tip, no worktree holds it, and it is not critical (decision 0012, amended) |
 | Any `.komodo/wt` worktree whose work is safe on origin | A person's session starts and sweeps in the background: clean, unleased, no open run, and either merged or idle 24 hours with every commit on origin |
 | A group's remote branch | The forge deletes head branches on merge; `komodo doctor --remote` checks that setting |
 | Run folders | Only the last 10 runs are kept, a starting value |
-| Anything else | `komodo doctor` flags an ended epic's files, and any worktree or branch with no group |
+| Anything else | `komodo doctor` flags an ended epic's folder, a flat file under `docs/backlog/`, and any worktree or branch with no group |
 
 A PR closed without merging gets a blocker note, and its group stays open.
 
 ### Blocker notes
 
-When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note under the group heading on the group's branch, then publishes the branch as a draft PR labelled `status/blocked`, so every developer and agent sees it (decision 0005):
+When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note in the group's `TG.md`, after the yaml, on the group's branch, then publishes the branch as a draft PR labelled `status/blocked`, so every developer and agent sees it (decision 0005):
 
 ```markdown
 > **Blocked** 2026-09-25 14:02, run r-0142, at Review.
@@ -58,7 +67,7 @@ When the orchestrator can't settle an escalation, the conductor stops the group 
 > - Saved: WIP commit `3f2a9c1` on `feat/tg-04-1-token-expiry`.
 ```
 
-A person, or the orchestrator on their word, edits the group on that branch: answers the question, changes a task, or splits the group, then sets it READY. `komodo resume` continues from the branch, feeds the edited text to the resumed builder, and removes the note.
+A person, or the orchestrator on their word, edits the group's folder on that branch: answers the question, changes a task file, or splits the group into a sibling folder under the same epic, then sets it READY. `komodo resume` continues from the branch, feeds the edited text to the resumed builder, and removes the note.
 
 ### Group states
 
@@ -72,8 +81,8 @@ The conductor writes each state to `state.json` before starting its work, so a r
 | Reviewing | The lenses are running | Repairing when findings are verified; otherwise Preparing |
 | Repairing | The builder is resumed with a fix list | Checking |
 | Preparing | Commit, hooks, rebase and integration | Shipping; or Repairing on a conflict or an integration failure |
-| Shipping | Push, draft PR and labels | Shipped |
-| Shipped | The PR is open and waits for a person to merge | Removed after the merge |
+| Shipping | Merge into the epic branch, push, epic PR section | Shipped |
+| Shipped | The group is on the epic branch; the epic PR waits for a person to merge | Removed after the epic merges |
 | Escalated | Waiting on the orchestrator | Back to the state it left, or Blocked |
 | Blocked | Stopped, with a blocker note on its branch and a draft PR labelled `status/blocked` | Ready, once a person edits the group |
 
@@ -120,18 +129,18 @@ Every model session returns JSON checked against its role's schema; the conducto
 | Command | Does |
 |---|---|
 | `komodo install` | Machine setup: links the binary onto PATH, installs the global orchestrator layer, runs doctor |
-| `komodo init` | Writes the starter docs, an empty `docs/backlog/` and optional config into a repo; nothing it writes is required |
-| `komodo run [group\|task] [--no-ship] [--dry-run] [--budget d]` | Preflight, then drives the next ready group, or the one named, to a draft PR under a budget; `--no-ship` stops it at Shipped-ready |
+| `komodo init` | Writes the starter docs, a `docs/backlog/` holding a starter epic, one group and two tasks, and optional config into a repo; nothing it writes is required |
+| `komodo run [group\|task] [--no-ship] [--dry-run] [--budget d]` | Preflight, then drives the next ready group, or the one named, onto its epic branch under a budget; `--no-ship` stops it at Shipped-ready |
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
 | `komodo resume <group>` | Continues a stopped or killed group from its saved session or WIP |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
 | `komodo worktree add <branch>` | Cuts a detached worktree for ad hoc work, tracking `<branch>` (decision 0012) |
-| `komodo pr create`, `komodo pr label` | Opens a pull request outside the line with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
+| `komodo pr create`, `komodo pr label` | Opens a pull request outside the line, defaulting to the open epic branch, with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
-| `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
+| `komodo backlog`, `komodo add <epic\|group> "<title>"`, `komodo migrate` | Lists the open groups; adds an epic, a group under its epic, or a task file; moves a flat backlog into the tree |
 | `komodo report` | Summarises the current run's metrics |
-| `komodo sync` | Removes merged groups' worktrees and `refs/komodo` tips, opens a cleanup PR for an epic whose files outlived it, and updates the toolkit between runs |
-| `komodo abandon <group>` | Removes a group's worktree and `refs/komodo` tip on purpose, and marks its file BLOCKED |
+| `komodo sync` | Removes merged groups' worktrees and `refs/komodo` tips, opens a cleanup PR for an epic whose folder outlived it, and updates the toolkit between runs |
+| `komodo abandon <group>` | Removes a group's worktree and `refs/komodo` tip on purpose, and marks its `TG.md` BLOCKED |
 | `komodo lint`, `komodo doctor [--remote]`, `komodo eval` | Backlog grammar, machine and forge health, the golden suite |
 | `komodo release` | This repo only: builds every platform, tests and publishes |
 
@@ -171,7 +180,7 @@ A host without resume gets a fresh session with the fix list and the saved diff.
 - **What it loads:** the host's default config directory, which holds the login (decision 0001). `--setting-sources local` shuts out personal settings and instructions and the project's shared skills; the brief carries the repo's `AGENTS.md` rules (decision 0001). `--plugin-dir` adds the role's own plugin (its skills, hooks and agents). `--settings` adds the role's permissions and turns auto-memory off. `--strict-mcp-config` keeps MCP servers out.
 - **What it may use:** `--tools` lists the role's tools. `--permission-mode dontAsk` refuses anything outside the allow list without a prompt (spike S2).
 - **Which model:** `--model` and `--effort` come from the profile.
-- **Limits:** `--max-budget-usd` on API billing, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3`, `CLAUDE_CODE_MAX_TURNS` per role, and the conductor's clock, which kills the process tree at the limit. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is never set: it keeps `GH_TOKEN` and overrides `dontAsk` (spike S8).
+- **Limits:** `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3`, `CLAUDE_CODE_MAX_TURNS=150` for every role, and the conductor's clock, which kills the process tree at the limit. The mount is built with a budget of 0, so `--max-budget-usd` is never passed. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is never set: it keeps `GH_TOKEN` and overrides `dontAsk` (spike S8).
 - **Environment:** the conductor removes forge credentials, sets `DISABLE_AUTOUPDATER=1`, and points `GOCACHE` and `GOTMPDIR` inside the worktree so a sandboxed build can write them (spike S2).
 
 ### Briefs
@@ -202,7 +211,7 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 | `commands.json` | Verify, compile, before-review and after-publish commands, each judged by the guard first; verify otherwise resolves by discovery |
 | `policy.json` | Adds critical refs |
 
-Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four orchestrator skills, `komodo`, `run`, `plan` and `escalate`, cannot be appended to by a repo (see #skills-and-scoping).
+Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The protected orchestrator skills, `komodo`, `plan`, `respond` and `run`, cannot be appended to by a repo (see #skills-and-scoping).
 
 ### Build
 
@@ -258,19 +267,19 @@ A headless run exits non-zero when it ends with any group blocked.
 
 Prepare runs locally with no model (REQ-24):
 
-1. Commit the group's work with its ticked task list. When it is the last open group of its epic, also delete the epic's group files. The message is conventional, with no trailers.
+1. Commit the group's work with its ticked task list. When it is the last open group of its epic, also delete the whole `docs/backlog/epic-NN/` folder. The message is conventional, with no trailers.
 2. Run the pre-commit and pre-push checks.
 3. Rebase on the base. On a conflict, the conductor leaves the conflict markers in the worktree and runs one repair round with the conflicts as the fix list; the builder edits files and never runs git. If the conflict remains, the group stops with a blocker note.
 4. Run the integration build and tests. The conductor also test-merges every group that is ready in the same run, to catch breakage between groups; a failure is a repair round for the group that caused it.
-5. Plan the stack: a group targets its epic's branch, or the branch of a group it depends on, whichever it hasn't merged into yet (REQ-13, decision 0006).
+5. Plan the stack: a group targets its epic's branch, or the branch of a group it depends on, whichever it hasn't merged into yet (REQ-13, decision 0006). The size cap is lint's, not Prepare's: 20 declared files per group and `groups_max` groups per epic (decision 0014).
 
-Ship is the only stage that reads the forge credential (REQ-26):
+Ship is the only stage that reads the forge credential (REQ-26). A group opens no pull request of its own (decision 0006, amended 2026-10-04):
 
-1. If the group's epic has no branch yet, cut `feat/<epic's version>` from `main` and open it as a draft PR to `main`.
-2. Push `refs/komodo/<branch>` to `refs/heads/<branch>` on origin, never a protected one; the push drops the builder's lease.
-3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status/wip` (REQ-25).
-4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status/wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
-5. When a stacked parent merges, rebase the child and point its PR at the new base.
+1. If the group's epic has no branch yet, cut `feat/<epic's version>` from `main` and open it as a draft PR to `main`, titled and bodied from `EPIC.md`'s goal paragraph. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status/wip` (REQ-25).
+2. Merge the reviewed, checked group into its base from step 5 above as a merge commit carrying the group id and its ticked task list. The merge drops the builder's lease.
+3. Push the epic branch to origin, never a protected one.
+4. Add one section for the landed group to the epic PR's body, and apply the labels. The epic PR to `main` is the one review a person does; only a person merges it (decision 0006).
+5. When a stacked parent merges, rebase the child onto the new base.
 6. Remove the group's worktree, its `refs/komodo` tip and sessions.
 
 Ship also publishes a blocked group: it pushes the group's branch with its blocker note and opens a draft PR labelled `status/blocked`.
@@ -307,13 +316,12 @@ GitHub Free offers draft PRs and rulesets only on public repositories; `komodo d
 
 ### Profiles and economy mode
 
-A profile maps each role to a model and an effort. The conductor picks full or economy mode from the plan (decision 0009). The models are starting values; only economy mode changes them.
+A profile maps each role to a model and an effort. The conductor picks full or economy mode from the plan (decision 0009). The models are starting values; only economy mode changes them. Every lens runs on the reviewer tier; the profile carries no per-lens effort, so each lens gets the tier's.
 
 | Role | Full mode: Max plans and API billing | Economy mode: Pro plan |
 |---|---|---|
 | Builder, and every repair | Opus, medium effort (decision 0009) | Sonnet, medium effort |
-| Correctness, and security and readiness lenses | Opus, high effort | One combined lens: Sonnet, high effort |
-| Quality lens | Sonnet, medium effort | Part of the combined lens |
+| Every review lens, on the reviewer tier | Opus, high effort | One combined lens: Sonnet, high effort |
 | Planner | Opus | Sonnet |
 | Scout | Haiku | Haiku |
 | Orchestrator on an escalation | Sonnet | Sonnet |
@@ -322,7 +330,7 @@ Economy mode also runs one group at a time, and uses its own combined review pro
 
 ### Skills and scoping
 
-Each role runs with its own plugin directory and nothing else. The global layer in the primary session holds only the orchestrator's skills, so builder, review and standards skills never load there. Doctor measures each role's always-on context against its budget.
+Each role runs with its own plugin directory and nothing else. The global layer in the primary session holds the orchestrator's skills and the `standards-*` skills; builder and review skills never load there. Doctor measures each role's always-on context against its budget.
 
 | Skill | Purpose | Roles | When it is used |
 |---|---|---|---|
@@ -342,7 +350,7 @@ Each role runs with its own plugin directory and nothing else. The global layer 
 |---|---|---|
 | Orchestrator | The session's own model | Everything its allow list permits |
 | Builder | heavy in full mode, standard in economy mode; never light | Read, Edit, Write, Bash, Grep, Glob |
-| Review lens | reviewer, or standard for Quality | Read, Grep, Glob |
+| Review lens | reviewer, every lens | Read, Grep, Glob |
 | Planner | heavy | Read, Grep, Glob |
 | Scout | light | Read, Grep, Glob; answers the orchestrator's lookups |
 | Responder | standard | Read, Edit, Write, Bash, Grep, Glob |
@@ -402,9 +410,9 @@ Native Windows comes first, and WSL2 is used when present (decision 0002). WSL2 
 
 ### Pacing, limits and loop detection
 
-- **Bound or unbound.** The plan probe (`internal/mount/claude/limits.go`) and the host's `rate_limit_event` stream messages give the plan and its usage windows. On a subscription the conductor paces to the windows and pauses until the reset (REQ-32). On API billing, a spend budget applies instead.
+- **Bound or unbound.** The plan probe (`internal/mount/claude/limits.go`) and the host's `rate_limit_event` stream messages give the plan and its usage windows. On a subscription the conductor paces to the windows and pauses until the reset (REQ-32). No API spend budget exists; on API billing the clock and the turn cap are the only limits.
 - **Concurrency.** Groups at once, as starting values: Pro 1, Max 5x 4, Max 20x 6, API 4, from the mount's own `Concurrency(plan)`.
-- **Time.** A group has 60 minutes (REQ-29). Session starting values: build 25 minutes, each lens 8, each repair 10, each re-review 5.
+- **Time.** A group has 60 minutes (REQ-29), and the group clock is the only time limit; no per-session minute limit exists.
 - **Loop detection.** The conductor stops a group and escalates when:
   - a round leaves the open findings unchanged
   - a repair changes no file
@@ -425,7 +433,7 @@ Native Windows comes first, and WSL2 is used when present (decision 0002). WSL2 
 
 - **Five of the eight stages spend no tokens.** Only Build, Review and Repair run models.
 - **Context packs replace exploration.** The builder starts with the files, signatures and callers it needs.
-- **Scoped roles.** Each session loads only its own plugin, and the primary session loads none of the line's skills.
+- **Scoped roles.** Each session loads only its own plugin; the primary session loads the orchestrator's skills and the `standards-*` skills, never the builder's or a lens's.
 - **Cache-friendly briefs.** Stable slots come first, so sessions share cached prompt prefixes.
 - **Resume, don't restart.** Repair and re-review resume their sessions. The headline metric is tokens per accepted group, reported by every eval.
 
@@ -474,7 +482,7 @@ In this repo, the orchestrator may edit the guard, the policy and the skills on 
 | Hermetic config | The line's config directory is missing, or holds personal settings, plugins or MCP |
 | Sandbox | The platform has one and it can't start |
 | Budgets | A role's always-on context is over its budget |
-| Leftovers | An ended epic's files, or a merged group's worktree or branch, remain |
+| Leftovers | An ended epic's folder, a flat file under `docs/backlog/`, or a merged group's worktree or branch, remain |
 | Plugins | A plugin's manifest is malformed; each plugin's enabled or disabled state is listed |
 | Forge, with `--remote` | No ruleset where the forge offers one; head branches aren't deleted on merge; drafts are unavailable (a warning) |
 
@@ -495,7 +503,7 @@ Each phase is a patch on the current code: `Next`, the stations and the ledger s
 | 0. Stabilize, days | REQ-4, REQ-5, REQ-13 | Fix the 2 regressions #201 merged: the guard judging line-run commands, and the gate's silent skip. Freeze the guard. Add `.gitattributes` and the rebuild-on-pull hooks. Trim finished tasks from `BACKLOG.md`, since `CHANGELOG.md` holds their history. Move the README's design sections into these specs. | The gate is green, `main` is every group's base, and a pull rebuilds the binary |
 | 1. Conductor and sessions, week 1 | REQ-2, REQ-3, REQ-6, REQ-11, REQ-14–REQ-16, REQ-28, REQ-29, REQ-31 | The conductor drives the stages. Per-role plugins, hermetic config, preflight, per-run metrics, time limits. The run skill becomes a launcher. | One group runs through the conductor within 60 minutes, with zero conductor tokens |
 | 2. Guardrails, week 2 | REQ-17, REQ-26, REQ-33–REQ-38, REQ-40, REQ-41 | The hook contract, allow lists, output checks, credential isolation, the sandbox where available, the guard cut to five rules | Every safety proof passes |
-| 3. Groups, review and repair, weeks 2–3 | REQ-7–REQ-10, REQ-12, REQ-18–REQ-25, REQ-27, REQ-30, REQ-32, REQ-45, REQ-46 | The backlog files, cleanup and blocker notes; group cards and checkboxes; parallel lenses and evidence checks; resumed repair and re-review; the progress rule; escalations; draft-first shipping; pacing. Open groups move from `BACKLOG.md` into `docs/backlog/`. | A 3-group plan runs unattended to draft PRs |
+| 3. Groups, review and repair, weeks 2–3 | REQ-7–REQ-10, REQ-12, REQ-18–REQ-25, REQ-27, REQ-30, REQ-32, REQ-45, REQ-46 | The backlog tree, cleanup of an ended epic's folder, and blocker notes; group cards and checkboxes; parallel lenses and evidence checks; resumed repair and re-review; the progress rule; escalations; draft-first shipping; pacing. Open groups move from `BACKLOG.md` into `docs/backlog/`. | A 3-group plan runs unattended onto its epic branch |
 | 4. Install, platforms and eval, weeks 3–4 | REQ-1, REQ-39, REQ-42–REQ-44 | Install scripts, native Windows and WSL2, the release command, plugin points, the golden suite and `komodo eval` | The success criteria hold on all three platforms, and the owner cuts 1.0.0 |
 
 A phase starts once the spikes its decisions name have passed. Work the PRD scopes out of 1.0.0 lands nothing new.

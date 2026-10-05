@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.9** The run skill, the LLD and decision 0006 describe landing without a group pull request
+  - files: `komodo/skills/run/SKILL.md`, `docs/lld.md`, `docs/decisions/0006-people-merge-to-main-and-agents-work-only-on-their-own-branches.md`
+  - accept: the run skill reports the epic branch's new merge commit instead of a PR link on exit 0; the LLD's Prepare and ship section matches ship.go
+  - done_when: `go run ./cmd/komodo lint`
+  - priority: M

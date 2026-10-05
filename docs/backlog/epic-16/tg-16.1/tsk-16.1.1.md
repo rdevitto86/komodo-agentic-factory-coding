@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.1** Proof: one group runs through the conductor
+  - done_when: `go run ./cmd/komodo report`
+  - owner: human
+  - context: `was TSK-11.19.1`, `promote one READY group, run it with komodo run, and confirm a landing within 60 minutes with zero tokens outside build, review, repair and escalation sessions`
+  - priority: H

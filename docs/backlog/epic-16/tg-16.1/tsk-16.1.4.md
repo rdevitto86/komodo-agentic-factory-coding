@@ -1,0 +1,6 @@
+- [ ] **TSK-16.1.4** The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each
+  - files: `eval/suite.json`, `eval/groups`
+  - done_when: `go run ./cmd/komodo eval --list`
+  - owner: human
+  - context: `was TSK-11.19.4`, `the owner picks the repos; each group is a merged change rewound to its parent, its task list written from its intent, and its own tests hidden (REQ-44)`
+  - priority: C

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.3.2** LatestBinary picks the newest by version, not by a fixed order
+  - files: `internal/mount/hookbin.go`, `internal/mount/hookbin_test.go`
+  - accept: among the checkout's bin/komodo, ~/.komodo/bin/komodo-<os>-<arch> and the running binary, the one with the highest version wins; a test proves an older checkout build loses to a newer installed release
+  - done_when: `go test ./internal/mount/...`
+  - priority: C

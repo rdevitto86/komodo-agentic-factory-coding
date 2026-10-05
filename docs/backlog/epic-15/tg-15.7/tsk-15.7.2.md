@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.2** Each session's process group is recorded and a live one is killed before another starts
+  - files: `internal/conductor/state.go`, `internal/mount/claude/contract.go`, `internal/conductor/resume.go`, `internal/conductor/state_test.go`, `internal/conductor/resume_test.go`
+  - accept: State holds the pgid per session; Resume and a fresh start kill a recorded pgid whose process still runs before spawning; a test proves an orphan is reaped
+  - done_when: `go test ./internal/conductor/... ./internal/mount/claude/...`
+  - priority: C

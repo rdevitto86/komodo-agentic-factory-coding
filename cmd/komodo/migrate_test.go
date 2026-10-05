@@ -31,26 +31,35 @@ func writeSampleBacklog(t *testing.T, root string) {
 	}
 }
 
-// TestRunMigrateWritesOneGroupFilePerGroup proves migrate converts every BACKLOG.md group into its own file.
-func TestRunMigrateWritesOneGroupFilePerGroup(t *testing.T) {
+// TestRunMigrateWritesOneGroupFolderPerGroup proves migrate converts every BACKLOG.md group into its
+// own folder under its epic's, the version landing in the epic index file and each task in its own file.
+func TestRunMigrateWritesOneGroupFolderPerGroup(t *testing.T) {
 	root := t.TempDir()
 	writeSampleBacklog(t, root)
 	runMigrate(root, nil)
 
-	firstPath := filepath.Join(root, groupFilesDir, "TG-01.1-first-group.md")
-	data, err := os.ReadFile(firstPath)
+	group, found, err := backlog.Locate(root, "TG-01.1")
+	if err != nil || !found {
+		t.Fatalf("first group folder: found %v, %v", found, err)
+	}
+	if len(group.Problems) != 0 || len(group.File.Problems) != 0 {
+		t.Fatalf("problems = %v %v", group.Problems, group.File.Problems)
+	}
+	if group.File.Version != "1.0.0" || group.File.EpicID != "EPIC-01" || group.Epic.Version != "1.0.0" {
+		t.Fatalf("version/epic = %q/%q, epic %+v", group.File.Version, group.File.EpicID, group.Epic)
+	}
+	if len(group.File.Tasks) != 2 || !group.File.Tasks[0].Done || group.File.Tasks[1].Done {
+		t.Fatalf("tasks = %+v", group.File.Tasks)
+	}
+	if len(group.TaskPaths) != 2 || filepath.Base(group.TaskPaths["TSK-01.1.2"]) != "tsk-01.1.2.md" {
+		t.Fatalf("task files = %v, want one per task", group.TaskPaths)
+	}
+	header, err := os.ReadFile(group.Path)
 	if err != nil {
-		t.Fatalf("first group file: %v", err)
+		t.Fatal(err)
 	}
-	file := backlog.ParseGroupFile(string(data))
-	if len(file.Problems) != 0 {
-		t.Fatalf("problems = %v", file.Problems)
-	}
-	if file.Version != "1.0.0" || file.EpicID != "EPIC-01" {
-		t.Fatalf("version/epic = %q/%q", file.Version, file.EpicID)
-	}
-	if len(file.Tasks) != 2 || !file.Tasks[0].Done || file.Tasks[1].Done {
-		t.Fatalf("tasks = %+v", file.Tasks)
+	if strings.Contains(string(header), "version:") || strings.Contains(string(header), "epic:") {
+		t.Fatalf("TG.md repeats what EPIC.md holds: %s", header)
 	}
 
 	// BACKLOG.md stays until a human removes it.
@@ -70,8 +79,8 @@ func TestRunMigrateSkipsAGroupWhoseEveryTaskIsDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	runMigrate(root, nil)
-	if _, err := os.Stat(filepath.Join(root, groupFilesDir, "TG-03.1-a-closed-group.md")); err == nil {
-		t.Fatal("migrate opened a file for a group whose every task is already done")
+	if _, err := os.Stat(backlog.GroupDirPath(root, "TG-03.1")); err == nil {
+		t.Fatal("migrate opened a folder for a group whose every task is already done")
 	}
 }
 
@@ -87,11 +96,11 @@ func TestRunMigrateCarriesModeBaseTierAndFacets(t *testing.T) {
 		t.Fatal(err)
 	}
 	runMigrate(root, nil)
-	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-02.1-a-group.md"))
-	if err != nil {
-		t.Fatalf("group file: %v", err)
+	group, found, err := backlog.Locate(root, "TG-02.1")
+	if err != nil || !found {
+		t.Fatalf("group folder: found %v, %v", found, err)
 	}
-	file := backlog.ParseGroupFile(string(data))
+	file := group.File
 	if file.Mode != "single" || file.Base != "feat/1.0.0" {
 		t.Fatalf("mode/base = %q/%q", file.Mode, file.Base)
 	}
@@ -103,31 +112,27 @@ func TestRunMigrateCarriesModeBaseTierAndFacets(t *testing.T) {
 	}
 }
 
-// TestRunMigrateSplitsAnEpicSpanningSeveralVersions proves a group whose version differs from its
-// epic's gets its own synthetic epic id, so the migrated group files never disagree on version.
-func TestRunMigrateSplitsAnEpicSpanningSeveralVersions(t *testing.T) {
+// TestRunMigrateSkipsAGroupWhoseVersionDiffersFromItsEpics proves a group at another version than its
+// epic folder is named and left in the source.
+func TestRunMigrateSkipsAGroupWhoseVersionDiffersFromItsEpics(t *testing.T) {
 	root := t.TempDir()
 	writeSampleBacklog(t, root)
-	runMigrate(root, nil)
-
-	secondPath := filepath.Join(root, groupFilesDir, "TG-01.2-second-group-a-later-version.md")
-	data, err := os.ReadFile(secondPath)
-	if err != nil {
-		t.Fatalf("second group file: %v", err)
+	out := captureStdout(t, func() { runMigrate(root, nil) })
+	if !strings.Contains(out, "skip TG-01.2: version 1.1.0 differs from EPIC-01's 1.0.0") {
+		t.Fatalf("migrate never named the group it could not place: %s", out)
 	}
-	file := backlog.ParseGroupFile(string(data))
-	if file.EpicID == "EPIC-01" {
-		t.Fatalf("epic = %q, want a split id distinct from EPIC-01", file.EpicID)
+	if _, err := os.Stat(backlog.GroupDirPath(root, "TG-01.2")); err == nil {
+		t.Fatal("migrate wrote TG-01.2 under an epic at another version")
 	}
-
+	if !strings.Contains(out, "1 group folder(s) written") {
+		t.Fatalf("count = %s", out)
+	}
 	problems, _, _, err := groupFileLintProblems(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, problem := range problems {
-		if strings.Contains(problem, "split the epic per version") {
-			t.Fatalf("lint still finds a version split: %v", problems)
-		}
+	if len(problems) != 0 {
+		t.Fatalf("lint problems = %v", problems)
 	}
 }
 
@@ -138,11 +143,8 @@ func TestRunMigrateKeepsAGithubStyleAnchorOnANumberedHeading(t *testing.T) {
 	writeSampleBacklog(t, root)
 	runMigrate(root, nil)
 
-	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-01.1-first-group.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "docs/prd.md#12-numbered-heading") {
+	data := groupText(t, root, "TG-01.1")
+	if !strings.Contains(data, "docs/prd.md#12-numbered-heading") {
 		t.Fatalf("context anchor missing: %s", data)
 	}
 	problems, _, _, err := groupFileLintProblems(root)
@@ -156,13 +158,15 @@ func TestRunMigrateKeepsAGithubStyleAnchorOnANumberedHeading(t *testing.T) {
 	}
 }
 
-// TestRunMigrateDryRunWritesNothing proves --dry-run only prints the files it would write.
+// TestRunMigrateDryRunWritesNothing proves --dry-run only prints the folders it would write.
 func TestRunMigrateDryRunWritesNothing(t *testing.T) {
 	root := t.TempDir()
 	writeSampleBacklog(t, root)
 	out := captureStdout(t, func() { runMigrate(root, []string{"--dry-run"}) })
-	if !strings.Contains(out, "TG-01.1") {
-		t.Fatalf("dry-run output missing TG-01.1: %s", out)
+	for _, want := range []string{"write docs/backlog/epic-01/EPIC.md\n", "write docs/backlog/epic-01/tg-01.1\n", "1 group folder(s) would be written"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dry-run output missing %q: %s", want, out)
+		}
 	}
 	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
 	if err == nil && len(entries) > 0 {
@@ -184,17 +188,13 @@ func TestRunMigrateImportsATODOFile(t *testing.T) {
 	if !strings.Contains(out, "could not place") {
 		t.Fatalf("migrate printed no skipped line: %s", out)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("entries = %v, err = %v, want one group file", entries, err)
+	tree, err := backlog.LoadTree(root)
+	if err != nil || len(tree.Epics) != 1 || len(tree.Groups) != 1 {
+		t.Fatalf("tree = %d epic(s), %d group(s), err = %v, want one of each", len(tree.Epics), len(tree.Groups), err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, entries[0].Name()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	file := backlog.ParseGroupFile(string(data))
-	if len(file.Problems) != 0 {
-		t.Fatalf("problems = %v", file.Problems)
+	file := tree.Groups[0].File
+	if len(file.Problems) != 0 || len(tree.Problems) != 0 {
+		t.Fatalf("problems = %v %v", file.Problems, tree.Problems)
 	}
 	if file.Status != "REFINEMENT" || len(file.Tasks) != 2 || file.Tasks[0].Done || !file.Tasks[1].Done {
 		t.Fatalf("file = %+v", file)
@@ -219,9 +219,9 @@ func TestRunMigrateImportsAForeignBacklogWithNoTGHeadings(t *testing.T) {
 		t.Fatal(err)
 	}
 	runMigrate(root, nil)
-	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("entries = %v, err = %v, want one group file", entries, err)
+	tree, err := backlog.LoadTree(root)
+	if err != nil || len(tree.Groups) != 1 {
+		t.Fatalf("tree = %d group(s), err = %v, want one group folder", len(tree.Groups), err)
 	}
 }
 
@@ -232,23 +232,116 @@ func TestRunMigrateRefusesWithNeitherBacklogNorTODO(t *testing.T) {
 	}
 }
 
-// TestRunMigrateSkipsAGroupFileThatAlreadyExists proves migrate never overwrites a hand-edited group file.
-func TestRunMigrateSkipsAGroupFileThatAlreadyExists(t *testing.T) {
+// TestRunMigrateSkipsAGroupFolderThatAlreadyExists proves migrate never overwrites a hand-edited the group index file
+// or the epic index file.
+func TestRunMigrateSkipsAGroupFolderThatAlreadyExists(t *testing.T) {
 	root := t.TempDir()
 	writeSampleBacklog(t, root)
-	dest := filepath.Join(root, groupFilesDir, "TG-01.1-first-group.md")
+	dest := filepath.Join(backlog.GroupDirPath(root, "TG-01.1"), backlog.GroupFileName)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dest, []byte("hand-edited"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runMigrate(root, nil)
+	epicPath := filepath.Join(backlog.EpicDir(root, "EPIC-01"), backlog.EpicFileName)
+	if err := os.WriteFile(epicPath, []byte("## [EPIC-01] Mine [READY]\n\n```yaml\nversion: 1.0.0\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() { runMigrate(root, nil) })
+	if !strings.Contains(out, "skip docs/backlog/epic-01/tg-01.1: already exists") {
+		t.Fatalf("migrate never said it skipped the folder: %s", out)
+	}
 	data, err := os.ReadFile(dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "hand-edited" {
-		t.Fatalf("migrate overwrote an existing group file: %s", data)
+		t.Fatalf("migrate overwrote an existing TG.md: %s", data)
+	}
+	if epic, _ := os.ReadFile(epicPath); !strings.Contains(string(epic), "Mine") {
+		t.Fatalf("migrate overwrote an existing EPIC.md: %s", epic)
+	}
+}
+
+// flatGroupText is one group file in the layout before the tree: version and epic in its own yaml.
+const flatGroupText = "## [TG-07.1] A flat group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-07\ndepends_on: []\n```\n\n" +
+	"- [ ] **TSK-07.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n\n" +
+	"- [x] **TSK-07.1.2** A done task\n  - files: `b.go`\n  - done_when: `go test ./b/...`\n"
+
+// TestRunMigrateDryRunOnFlatFilesPrintsTheFolders proves a flat docs/backlog is the source migrate
+// prefers, and a dry run names each folder without writing one.
+func TestRunMigrateDryRunOnFlatFilesPrintsTheFolders(t *testing.T) {
+	root := t.TempDir()
+	writeFlatGroupFile(t, root, "TG-07.1-a-flat-group.md", flatGroupText)
+	writeFlatGroupFile(t, root, "TG-07.2-another.md",
+		"## [TG-07.2] Another [P: M] [REFINEMENT]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-07\ndepends_on: []\n```\n")
+	out := captureStdout(t, func() { runMigrate(root, []string{"--dry-run"}) })
+	for _, want := range []string{
+		"write docs/backlog/epic-07/EPIC.md\n", "write docs/backlog/epic-07/tg-07.1\n", "write docs/backlog/epic-07/tg-07.2\n",
+		"2 group folder(s) would be written",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dry-run output missing %q: %s", want, out)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			t.Fatalf("dry-run wrote a folder: %s", entry.Name())
+		}
+	}
+}
+
+// TestRunMigrateMovesFlatFilesIntoTheTreeAndLeavesThem proves a real run writes the tree, lints clean,
+// and leaves the flat files for a person to remove.
+func TestRunMigrateMovesFlatFilesIntoTheTreeAndLeavesThem(t *testing.T) {
+	root := t.TempDir()
+	writeFlatGroupFile(t, root, "TG-07.1-a-flat-group.md", flatGroupText)
+	out := captureStdout(t, func() { runMigrate(root, nil) })
+	if !strings.Contains(out, "1 group folder(s) written") || !strings.Contains(out, "stays until it is removed by hand") {
+		t.Fatalf("migrate output = %s", out)
+	}
+	group, found, err := backlog.Locate(root, "TG-07.1")
+	if err != nil || !found {
+		t.Fatalf("group folder: found %v, %v", found, err)
+	}
+	if group.Epic.ID != "EPIC-07" || group.File.Version != "1.0.0" || group.File.Status != "READY" {
+		t.Fatalf("group = %+v under %+v", group.File, group.Epic)
+	}
+	if len(group.File.Tasks) != 2 || group.File.Tasks[0].Done || !group.File.Tasks[1].Done {
+		t.Fatalf("tasks = %+v", group.File.Tasks)
+	}
+	for _, name := range []string{"tsk-07.1.1.md", "tsk-07.1.2.md"} {
+		if _, err := os.Stat(filepath.Join(group.Dir, name)); err != nil {
+			t.Fatalf("task file %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, groupFilesDir, "TG-07.1-a-flat-group.md")); err != nil {
+		t.Fatalf("migrate removed the flat file: %v", err)
+	}
+	problems, _, _, err := groupFileLintProblems(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("lint problems = %v", problems)
+	}
+	notes := groupFileNotes(root)
+	found = false
+	for _, note := range notes {
+		if strings.Contains(note, "TG-07.1-a-flat-group.md") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("notes = %v, want the flat file noted for removal", notes)
+	}
+	again := captureStdout(t, func() { runMigrate(root, nil) })
+	if !strings.Contains(again, "skip docs/backlog/epic-07/tg-07.1: already exists") {
+		t.Fatalf("a second migrate rewrote the folder: %s", again)
 	}
 }

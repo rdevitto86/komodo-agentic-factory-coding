@@ -11,11 +11,31 @@ import (
 	"komodo/internal/conductor"
 )
 
-// blockedGroup is a one-group file whose task a person set back to READY after it stopped.
-const blockedGroup = "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n\n" +
-	"- [ ] **TSK-1.1** Do it\n  - files: `a.go`\n"
+// blockedGroup is the group index file of a group whose task a person set back to READY after it stopped.
+const blockedGroup = "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n"
 
-// blockedRun saves a Blocked state whose worktree holds the noted group file, its task at status.
+// blockedTask is the group's one task file.
+const blockedTask = "- [ ] **TSK-1.1** Do it\n  - files: `a.go`\n"
+
+// writeBlockedGroup writes a group id's folder under worktree with tgText as its the group index file, returning that path.
+func writeBlockedGroup(t *testing.T, worktree, tgText string) string {
+	t.Helper()
+	seedEpic(t, worktree, "EPIC-1", "1.0.0", "feat")
+	dir := backlog.GroupDirPath(worktree, "TG-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, backlog.GroupFileName)
+	if err := os.WriteFile(path, []byte(tgText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tsk-1.1.md"), []byte(blockedTask), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// blockedRun saves a Blocked state whose worktree holds the noted group folder, its heading at status.
 func blockedRun(t *testing.T, status string) (root, path string) {
 	t.Helper()
 	root = t.TempDir()
@@ -25,13 +45,7 @@ func blockedRun(t *testing.T, status string) (root, path string) {
 		t.Fatal(err)
 	}
 	noted = strings.Replace(noted, "[P: C] [BLOCKED]", "[P: C] ["+status+"]", 1)
-	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path = filepath.Join(worktree, "docs", "backlog", "TG-1-a-group.md")
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	path = writeBlockedGroup(t, worktree, noted)
 	state := conductor.State{Group: "TG-1", Current: conductor.Blocked, Worktree: worktree}
 	if err := conductor.SaveState(conductor.StatePath(root, "TG-1"), state); err != nil {
 		t.Fatal(err)
@@ -77,12 +91,7 @@ func TestClearBlockerNamesAMissingBacklogOrGroup(t *testing.T) {
 		t.Fatal("clear = nil, want an error for a worktree with no backlog")
 	}
 	worktree := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(worktree, "docs", "backlog", "TG-1-a-group.md"), []byte(blockedGroup), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeBlockedGroup(t, worktree, blockedGroup)
 	if err := clearBlocker(conductor.State{Group: "TG-9", Worktree: worktree}); err == nil {
 		t.Fatal("clear = nil, want an error for a group the backlog lacks")
 	}

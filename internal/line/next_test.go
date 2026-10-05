@@ -510,3 +510,29 @@ func TestReadyGroupsCountsAnEarlierGroupsTitleOnlyBranchAsABase(t *testing.T) {
 		t.Fatalf("ready = %v; want the default-based group, then the group stacked on its title-only branch", got)
 	}
 }
+
+// TestReadyGroupsOrderByNumberNotByName proves a group id comes before a group id whatever the folder names sort as.
+func TestReadyGroupsOrderByNumberNotByName(t *testing.T) {
+	text := "### [TG-15.10] Tenth\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-15.10.1] Ten [P: C] [READY]\n```yaml\nfiles: [j/ten.go]\ndone_when: [\"go test ./j/...\"]\n```\n\n" +
+		"### [TG-15.2] Second\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-15.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+		"### [TG-15.1] First\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-15.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+	root := repo(t, text)
+	groups, err := ReadyGroups(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, group := range groups {
+		got = append(got, group.ID)
+	}
+	if strings.Join(got, ",") != "TG-15.1,TG-15.2,TG-15.10" {
+		t.Fatalf("ready = %v; want the groups in numeric order", got)
+	}
+	parsed := backlog.Parse(text)
+	if ordered := readyGroups(root, parsed, true); len(ordered) != 3 || ordered[0].ID != "TG-15.1" || ordered[2].ID != "TG-15.10" {
+		t.Fatalf("ready from parse order = %v; want numeric order imposed on file order", ordered)
+	}
+}

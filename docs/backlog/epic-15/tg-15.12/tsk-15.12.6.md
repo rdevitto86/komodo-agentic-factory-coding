@@ -1,0 +1,5 @@
+- [ ] **TSK-15.12.6** The guard's refusals name the role and the command class that would allow the call
+  - files: `internal/guard/hook.go`, `internal/guard/hook_test.go`
+  - accept: each refusal file under .komodo/runs/guard-refusals carries the role, the rule and, for a shell call, the command class that would have allowed it or `none`
+  - done_when: `go test ./internal/guard/...`
+  - priority: M

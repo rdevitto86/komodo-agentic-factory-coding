@@ -1,0 +1,5 @@
+- [ ] **TSK-15.12.4** The guard inspects rm for paths outside the worktree in a line session
+  - files: `internal/guard/tokenize.go`, `internal/guard/table.go`, `internal/guard/guard_test.go`
+  - accept: commandWrites reads rm's targets; a line session's `rm -rf ../x` or `rm -rf ~/x` is refused naming the worktree; `rm -rf node_modules` stays allowed
+  - done_when: `go test ./internal/guard/...`
+  - priority: H

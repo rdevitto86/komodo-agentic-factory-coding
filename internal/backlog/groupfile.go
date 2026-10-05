@@ -31,7 +31,7 @@ type GroupTask struct {
 	Line      int
 }
 
-// GroupFile is one parsed <group-id>-<slug>.md file: its heading, yaml fields, and its tasks in order.
+// GroupFile is one group as its index and task files assemble: heading, yaml fields, and tasks in order.
 type GroupFile struct {
 	ID        string
 	Title     string
@@ -47,7 +47,7 @@ type GroupFile struct {
 	Problems  []string
 }
 
-// ParseGroupFile reads one docs/backlog/<group-id>-<slug>.md file into a GroupFile without judging its content.
+// ParseGroupFile reads group grammar text, a group index file with its task files appended, without judging its content.
 func ParseGroupFile(text string) GroupFile {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	var file GroupFile

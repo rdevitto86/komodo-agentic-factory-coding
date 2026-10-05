@@ -1,0 +1,5 @@
+- [ ] **TSK-15.14.2** Command classes live in one package the mount and lint share
+  - files: `internal/allow/allow.go`, `internal/allow/allow_test.go`, `internal/mount/claude/permissions.go`
+  - accept: allow.Classes holds files, git-read, build, test, lint, format and komodo-check with their fixed prefixes and per-language additions; the Claude mount renders from it and nothing else lists a prefix
+  - done_when: `go test ./internal/allow/... ./internal/mount/claude/...`
+  - priority: C

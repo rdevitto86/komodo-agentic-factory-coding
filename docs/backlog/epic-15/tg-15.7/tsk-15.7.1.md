@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.1** A session with no stream event for ten minutes is stopped and escalates as idle
+  - files: `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
+  - accept: drain waits on an idle timer reset by every event; on expiry it stops the session's process group and escalates with reason `idle` and the last event's time
+  - done_when: `go test ./internal/conductor/...`
+  - priority: C

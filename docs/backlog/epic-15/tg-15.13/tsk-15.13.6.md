@@ -1,0 +1,5 @@
+- [ ] **TSK-15.13.6** Doctor lists unknown entries in .komodo as leftovers
+  - files: `internal/doctor/leftovers.go`, `internal/doctor/leftovers_test.go`
+  - accept: any entry under .komodo the binary does not create is a note naming its size; the known set is one list in the doctor package
+  - done_when: `go test ./internal/doctor/...`
+  - priority: M

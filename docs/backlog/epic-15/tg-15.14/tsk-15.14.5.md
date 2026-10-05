@@ -1,0 +1,5 @@
+- [ ] **TSK-15.14.5** Every role with a shell declares its command classes
+  - files: `komodo/roles/responder.md`, `komodo/roles/tester.md`, `komodo/roles/escalation.md`, `internal/mount/claude/permissions_test.go`
+  - accept: responder: files, git-read, build, test, lint, format, komodo-check; tester: files, build, test, lint, format; escalation gains komodo-check; a test fails on a shell role with no classes
+  - done_when: `go test ./internal/mount/claude/...`
+  - priority: H

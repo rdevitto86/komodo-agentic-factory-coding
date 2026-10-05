@@ -1,0 +1,5 @@
+- [x] **TSK-15.2.2** Check, escalation and abandon read the tree
+  - files: `internal/check/check.go`, `internal/conductor/escalate.go`, `internal/conductor/abandon.go`, `internal/check/check_test.go`, `internal/conductor/escalate_test.go`, `internal/conductor/abandon_test.go`
+  - accept: a tick-only diff under docs/backlog/ is in scope; an escalation may edit its own group folder or create a sibling group folder under the same epic and nothing else; abandon writes its note into TG.md
+  - done_when: `go test ./internal/check/... ./internal/conductor/...`
+  - priority: C

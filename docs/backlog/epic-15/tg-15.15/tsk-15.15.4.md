@@ -1,0 +1,5 @@
+- [ ] **TSK-15.15.4** The ledger is never truncated to one run
+  - files: `internal/line/cut.go`, `internal/ledger/ledger.go`, `internal/line/report.go`, `internal/ledger/ledger_test.go`, `internal/line/report_test.go`
+  - accept: line.jsonl is only appended; TruncateRun is removed; `komodo report` and `komodo metrics` take `--run <id>` and default to the newest run; a test proves two runs coexist
+  - done_when: `go test ./internal/line/... ./internal/ledger/...`
+  - priority: H

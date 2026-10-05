@@ -1,0 +1,5 @@
+- [ ] **TSK-15.13.4** Doctor lists orphan tips, blocked runs with no worktree and dead leases
+  - files: `internal/doctor/leftovers.go`, `internal/doctor/leftovers_test.go`
+  - accept: a refs/komodo tip with no run and no origin branch, a Blocked run whose worktree folder is gone, and a lease whose holder is dead are each a problem naming the command that clears it
+  - done_when: `go test ./internal/doctor/...`
+  - priority: H

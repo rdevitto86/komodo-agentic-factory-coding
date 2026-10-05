@@ -1,0 +1,5 @@
+- [ ] **TSK-15.6.4** Time used carries across runs and shortens the next deadline
+  - files: `internal/conductor/state.go`, `internal/run/drive.go`, `internal/run/run.go`, `internal/conductor/state_test.go`, `internal/run/drive_test.go`
+  - accept: a resumed group's deadline is 60 minutes minus State.TimeUsed; at zero remaining the run escalates with reason `time` without starting a session
+  - done_when: `go test ./internal/conductor/... ./internal/run/...`
+  - priority: H

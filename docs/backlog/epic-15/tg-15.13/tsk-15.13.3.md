@@ -1,0 +1,5 @@
+- [ ] **TSK-15.13.3** Doctor fails on oversized groups and ended epics still present
+  - files: `internal/doctor/backlog.go`, `internal/doctor/backlog_test.go`
+  - accept: a group whose open tasks declare more than 20 files, an epic over groups_max, or a fully ticked epic whose folder is still on origin's default branch is a problem
+  - done_when: `go test ./internal/doctor/...`
+  - priority: H

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.3** A blocked group still publishes its status/blocked draft pull request
+  - files: `internal/line/ship.go`, `internal/line/ship_blocked_test.go`
+  - accept: ShipBlocked pushes the group branch and opens the blocked draft PR against the epic branch exactly as before; a test proves it after the group path change
+  - done_when: `go test ./internal/line/...`
+  - priority: C

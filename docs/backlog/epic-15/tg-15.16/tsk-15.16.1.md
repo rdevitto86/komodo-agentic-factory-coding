@@ -1,0 +1,5 @@
+- [ ] **TSK-15.16.1** The README and the LLD claim only what the code does
+  - files: `README.md`, `docs/lld.md`
+  - accept: every `komodo <sub>` and `/<skill>` named in both files exists; the hooks, skills and budget claims match the code after this epic
+  - done_when: `go run ./cmd/komodo doctor`
+  - priority: M

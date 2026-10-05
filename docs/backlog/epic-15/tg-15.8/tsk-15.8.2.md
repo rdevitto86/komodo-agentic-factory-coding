@@ -1,0 +1,5 @@
+- [ ] **TSK-15.8.2** A whole-prompt cap with a visible clip marker
+  - files: `internal/line/clip.go`, `internal/line/brief.go`, `internal/profile/profile.go`, `internal/line/clip_test.go`, `internal/line/brief_test.go`
+  - accept: profile.Caps.Prompt bounds the joined prompt; the file bodies are clipped first, oldest task last, each cut marked; a test holds a 12-task group under the cap
+  - done_when: `go test ./internal/line/...`
+  - priority: H

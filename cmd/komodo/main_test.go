@@ -223,7 +223,7 @@ func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
 // against docs/backlog group files.
 func TestCheckReleaseReadsGroupFilesWhenTheRepoHoldsThem(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-90.1-shipped.md",
+	seedGroup(t, root,
 		"## [TG-90.1] A shipped group [P: H] [DONE]\n\n```yaml\ntype: feat\nversion: 4.0.0\nepic: EPIC-90\ndepends_on: []\n```\n\n"+
 			"- [x] **TSK-90.1.1** Done\n  - files: `a.go`\n")
 	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(releaseChangelog), 0o644); err != nil {

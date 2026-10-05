@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.4** A blocked group whose worktree is gone is re-cut from its refs/komodo tip
+  - files: `internal/conductor/resume.go`, `internal/line/worktree.go`, `internal/conductor/resume_test.go`
+  - accept: when state.json names a worktree that no longer exists and refs/komodo/<branch> exists, resume cuts a detached worktree at the tip and continues; with no tip it stops with a blocker note
+  - done_when: `go test ./internal/conductor/... ./internal/line/...`
+  - priority: H

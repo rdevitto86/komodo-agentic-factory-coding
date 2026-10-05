@@ -263,22 +263,42 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 	}, nil
 }
 
-// editedGroup is the group's own docs/backlog file, as a person edited it on the group's branch.
+// editedGroup is the group's whole folder, the group index file then each task file, as edited on the group's branch.
 func editedGroup(worktree, group string) (string, bool) {
-	_, text, found, err := backlog.FindGroupFile(worktree, group)
+	dir, found, err := backlog.Locate(worktree, group)
 	if err != nil || !found {
 		return "", false
 	}
-	return strings.TrimSpace(text), true
+	var parts []string
+	for _, path := range dir.Paths() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", false
+		}
+		parts = append(parts, strings.TrimSpace(string(data)))
+	}
+	return strings.Join(parts, "\n\n"), true
 }
 
 // lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them.
 func lintBacklog(worktree string) ([]string, error) {
-	parsed, err := backlog.LoadRoot(worktree)
+	tree, err := backlog.LoadTree(worktree)
 	if err != nil {
 		return nil, err
 	}
-	return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
+	parsed := backlog.FromTree(tree)
+	problems := append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...)
+	seen := map[string]bool{}
+	for _, problem := range problems {
+		seen[problem] = true
+	}
+	// The tree's own problems already reach Lint through FromTree; only LintTree's caps are new here.
+	for _, problem := range backlog.LintTree(tree) {
+		if !seen[problem] {
+			problems = append(problems, problem)
+		}
+	}
+	return problems, nil
 }
 
 // writeReview saves the reviewer's whole result, findings with their files and titles, where

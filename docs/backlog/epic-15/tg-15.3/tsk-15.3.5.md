@@ -1,0 +1,5 @@
+- [ ] **TSK-15.3.5** komodo owns the global AGENTS.md and doctor reports its drift
+  - files: `internal/mount/claude/claude.go`, `internal/doctor/render.go`, `internal/mount/claude/claude_test.go`, `internal/doctor/render_test.go`
+  - accept: RenderGlobal writes ~/.claude/AGENTS.md from komodo/AGENTS.md and lists it in the marker; doctor names it as drift when the bytes differ; a CLAUDE.md that imports it is left alone
+  - done_when: `go test ./internal/mount/claude/... ./internal/doctor/...`
+  - priority: H

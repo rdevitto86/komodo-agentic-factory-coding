@@ -1,0 +1,5 @@
+- [ ] **TSK-15.8.5** The context pack adds exported Go signatures from each declared file
+  - files: `internal/line/brief_slots.go`, `internal/line/signatures.go`, `internal/line/signatures_test.go`
+  - accept: for each declared .go file, a `signatures` slot lists its exported funcs, types and methods as one line each through go/ast, under its own cap; non-Go files add nothing
+  - done_when: `go test ./internal/line/...`
+  - priority: M

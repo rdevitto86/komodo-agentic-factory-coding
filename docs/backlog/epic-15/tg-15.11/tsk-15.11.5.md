@@ -1,0 +1,5 @@
+- [ ] **TSK-15.11.5** A task close tests the touched packages and their dependents; the full suite runs once at Prepare
+  - files: `internal/line/close.go`, `internal/line/close_test.go`
+  - accept: close runs `go test` on the packages of the task's files plus every package `go list -deps` shows importing them; Prepare runs the full gate; a test proves the package set
+  - done_when: `go test ./internal/line/...`
+  - priority: H

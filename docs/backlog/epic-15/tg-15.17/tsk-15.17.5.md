@@ -1,0 +1,5 @@
+- [ ] **TSK-15.17.5** The rules tell a session what to do with a host refusal it cannot see
+  - files: `komodo/AGENTS.md`
+  - accept: one rule: a command the host's own classifier refuses is handed to the person in one line with the exact command, never retried in another form
+  - done_when: `go run ./cmd/komodo lint`
+  - priority: M

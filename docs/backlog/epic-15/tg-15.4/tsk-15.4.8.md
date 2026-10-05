@@ -1,0 +1,5 @@
+- [ ] **TSK-15.4.8** komodo release notes renders an epic's changelog section from EPIC.md and its landed groups
+  - files: `cmd/komodo/release.go`, `internal/changelog/changelog.go`, `internal/changelog/changelog_test.go`, `cmd/komodo/release_test.go`
+  - accept: `komodo release notes EPIC-NN` prints a `## <version> — <date>` section: the goal's first sentence, then one bullet per landed group's title; the last group's ship inserts it above the previous section when CHANGELOG.md lacks it
+  - done_when: `go test ./cmd/komodo/... ./internal/changelog/...`
+  - priority: M

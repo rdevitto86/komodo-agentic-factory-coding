@@ -1,7 +1,7 @@
 # Downloads this machine's komodo release, verifies its SHA-256, and hands every other step to komodo install.
 # Run: powershell -ExecutionPolicy Bypass -File install.ps1. Environment: KOMODO_VERSION, KOMODO_RELEASE_URL.
 $ErrorActionPreference = 'Stop'
-$base = "$(if ($env:KOMODO_RELEASE_URL) { $env:KOMODO_RELEASE_URL } else { 'https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download' })/$(if ($env:KOMODO_VERSION) { $env:KOMODO_VERSION } else { 'v1.0.0-beta.2' })"
+$base = "$(if ($env:KOMODO_RELEASE_URL) { $env:KOMODO_RELEASE_URL } else { 'https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download' })/$(if ($env:KOMODO_VERSION) { $env:KOMODO_VERSION } else { 'v1.0.0-beta.5' })"
 $name = "komodo-windows-$(if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }).exe"
 $dir = Join-Path $HOME '.komodo\bin'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null

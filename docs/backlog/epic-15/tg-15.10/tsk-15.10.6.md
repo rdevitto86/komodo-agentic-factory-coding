@@ -1,0 +1,5 @@
+- [ ] **TSK-15.10.6** Profile entries nothing reads are removed or wired, and each lens runs at its tier and effort
+  - files: `komodo/profiles/full.json`, `komodo/profiles/economy.json`, `internal/profile/profile.go`, `internal/run/requests.go`, `internal/profile/profile_test.go`, `internal/run/requests_test.go`
+  - accept: `readiness` is gone; correctness, security and quality each pick their own tier and effort from the profile; a test proves the quality lens runs on the standard tier in full mode
+  - done_when: `go test ./internal/profile/... ./internal/run/...`
+  - priority: M

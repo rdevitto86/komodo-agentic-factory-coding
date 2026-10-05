@@ -1,0 +1,5 @@
+- [ ] **TSK-15.12.5** The guard table holds at least one row per rule
+  - files: `internal/guard/table.go`, `internal/guard/guard_test.go`
+  - accept: a test maps every refusal message format in guard.go to a table row that triggers it, and fails naming a rule with none
+  - done_when: `go test ./internal/guard/...`
+  - priority: M

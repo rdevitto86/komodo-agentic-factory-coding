@@ -1,0 +1,5 @@
+- [ ] **TSK-15.14.1** The orchestrator's deny list names komodo's own files, not the host's state
+  - files: `internal/mount/claude/claude.go`, `internal/guard/paths.go`, `internal/mount/claude/claude_test.go`, `internal/guard/paths_test.go`
+  - accept: `Edit(~/.claude/*)` is replaced by the exact files komodo renders: ~/.claude/settings.json, ~/.claude/.komodo-rendered, ~/.claude/AGENTS.md and the rendered skill and agent folders; ~/.claude/plans/**, ~/.claude/projects/**, ~/.claude/todos/** and ~/.claude/CLAUDE.local.md are writable; the guard's config paths match
+  - done_when: `go test ./internal/mount/claude/... ./internal/guard/...`
+  - priority: C

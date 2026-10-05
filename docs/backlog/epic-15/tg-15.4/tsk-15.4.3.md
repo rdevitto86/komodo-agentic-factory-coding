@@ -1,0 +1,5 @@
+- [ ] **TSK-15.4.3** OpenEpic opens the epic pull request for a branch that already exists on origin
+  - files: `internal/line/epic.go`, `internal/line/epic_test.go`
+  - accept: when feat/<version> exists on origin and no open PR targets main from it, OpenEpic opens the draft with EPIC.md's title as the PR title and its goal as the body; an existing PR is left alone
+  - done_when: `go test ./internal/line/...`
+  - priority: C

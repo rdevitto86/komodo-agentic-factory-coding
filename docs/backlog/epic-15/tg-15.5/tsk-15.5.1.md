@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.1** Ship merges a reviewed group into the epic branch and opens no group pull request
+  - files: `internal/line/ship.go`, `internal/line/merge.go`, `internal/line/ship_test.go`, `internal/line/merge_test.go`
+  - accept: after the review gate passes, Ship fetches the epic branch, merges the group's tip with `--no-ff` and a message `land(<group>): <title>` carrying the ticked task list, pushes the epic branch, and creates no PR; a merge conflict stops the group with a blocker note
+  - done_when: `go test ./internal/line/...`
+  - priority: C

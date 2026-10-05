@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.9** Repair rounds on the headless path are capped by the profile
+  - files: `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
+  - accept: a group whose repairs reach Profile.Repairs after checks, or ReviewRepairs after review, escalates with reason `repairs`
+  - done_when: `go test ./internal/conductor/...`
+  - priority: H

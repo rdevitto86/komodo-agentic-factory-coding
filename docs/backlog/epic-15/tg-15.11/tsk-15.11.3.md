@@ -1,0 +1,5 @@
+- [ ] **TSK-15.11.3** Fuzzing leaves the default push path
+  - files: `internal/gate/githook.go`, `cmd/komodo/release.go`, `internal/gate/githook_test.go`
+  - accept: the pre-push step passes `--fuzz 10s` only when a pushed path is inside a package holding a fuzz target; `komodo release check` always fuzzes every target for 10s
+  - done_when: `go test ./internal/gate/... ./cmd/komodo/...`
+  - priority: M

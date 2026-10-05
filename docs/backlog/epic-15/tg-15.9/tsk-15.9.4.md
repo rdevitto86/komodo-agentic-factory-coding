@@ -1,0 +1,5 @@
+- [ ] **TSK-15.9.4** Prune deletes a local branch only when all four conditions hold
+  - files: `internal/doctor/prune.go`, `internal/doctor/prune_test.go`, `internal/hooks/status.go`
+  - accept: a local branch is deleted when its remote branch is gone or the forge shows its PR merged, its tip equals the last pushed tip, no worktree has it checked out, and it is not critical; the status line reports `pruned N branch(es)`; a test proves an unpushed commit keeps the branch
+  - done_when: `go test ./internal/doctor/... ./internal/hooks/...`
+  - priority: H

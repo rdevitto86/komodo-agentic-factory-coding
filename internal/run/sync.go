@@ -249,46 +249,108 @@ func syncCleanup(root string, client *pr.Client, dryRun bool, out io.Writer, suf
 				return err
 			}
 		}
-		fmt.Fprintf(out, "cleanup: opened %s deleting %s's %d group file(s)%s\n", branch, epic, len(ended[epic]), suffix)
+		fmt.Fprintf(out, "cleanup: opened %s deleting %s's %d backlog file(s)%s\n", branch, epic, len(ended[epic]), suffix)
 	}
 	return nil
 }
 
-// endedEpics maps each epic to its group files at ref when every one of them has every task ticked.
+// endedEpics maps each epic to its folder's every path at ref once all its groups have every task ticked.
 func endedEpics(root, ref string) (map[string][]string, error) {
-	listed, err := git.Run(root, "ls-tree", "--name-only", ref, "docs/backlog/")
+	listed, err := git.Run(root, "ls-tree", "-r", "--name-only", ref, backlog.GroupFilesDir+"/")
 	if err != nil {
 		return nil, err
 	}
-	files := map[string][]string{}
-	open := map[string]bool{}
+	folders := map[string][]string{}
 	for _, path := range strings.Split(listed, "\n") {
-		if !strings.HasSuffix(path, ".md") {
+		parts := strings.Split(path, "/")
+		// docs/backlog/epic-NN/...: anything shallower is a flat file outside the tree.
+		if len(parts) < 4 || !strings.HasPrefix(parts[2], "epic-") {
 			continue
 		}
-		text, err := git.Run(root, "show", ref+":"+path)
+		folders[parts[2]] = append(folders[parts[2]], path)
+	}
+	files := map[string][]string{}
+	for folder, paths := range folders {
+		id, ended, err := epicEndedAt(root, ref, folder, paths)
 		if err != nil {
 			return nil, err
 		}
-		group := backlog.ParseGroupFile(text)
-		if group.EpicID == "" {
-			continue
-		}
-		files[group.EpicID] = append(files[group.EpicID], path)
-		for _, task := range group.Tasks {
-			open[group.EpicID] = open[group.EpicID] || !task.Done
-		}
-		// A file with no parsed task or a parse problem may hide open work, so its epic stays open.
-		if len(group.Problems) > 0 || len(group.Tasks) == 0 {
-			open[group.EpicID] = true
-		}
-	}
-	for epic := range open {
-		if open[epic] {
-			delete(files, epic)
+		if ended {
+			sort.Strings(paths)
+			files[id] = paths
 		}
 	}
 	return files, nil
+}
+
+// epicEndedAt reads one epic folder at ref: its id, and whether every group under it has every task ticked.
+func epicEndedAt(root, ref, folder string, paths []string) (string, bool, error) {
+	id := strings.ToUpper(folder)
+	ended := true
+	groups := map[string][]string{}
+	for _, path := range paths {
+		parts := strings.Split(path, "/")
+		switch {
+		case len(parts) == 4 && parts[3] == backlog.EpicFileName:
+			text, err := git.Run(root, "show", ref+":"+path)
+			if err != nil {
+				return "", false, err
+			}
+			epic := backlog.ParseEpicFile(text)
+			if epic.ID != "" {
+				id = epic.ID
+			}
+			if len(epic.Problems) > 0 {
+				ended = false
+			}
+		case len(parts) == 5 && strings.HasPrefix(parts[3], "tg-"):
+			groups[parts[3]] = append(groups[parts[3]], path)
+		}
+	}
+	// An epic with no group has shipped nothing, so nothing of it has outlived its work.
+	if len(groups) == 0 {
+		return id, false, nil
+	}
+	for _, group := range groups {
+		done, err := groupTickedAt(root, ref, group)
+		if err != nil {
+			return "", false, err
+		}
+		ended = ended && done
+	}
+	return id, ended, nil
+}
+
+// groupTickedAt assembles one group folder at ref, the group index file then its task files, and reports every task ticked.
+func groupTickedAt(root, ref string, paths []string) (bool, error) {
+	sort.Strings(paths)
+	var header string
+	var tasks []string
+	for _, path := range paths {
+		text, err := git.Run(root, "show", ref+":"+path)
+		if err != nil {
+			return false, err
+		}
+		if strings.HasSuffix(path, "/"+backlog.GroupFileName) {
+			header = text
+			continue
+		}
+		tasks = append(tasks, text)
+	}
+	if header == "" {
+		return false, nil
+	}
+	group := backlog.ParseGroupFile(strings.Join(append([]string{header}, tasks...), "\n\n"))
+	// A group with no parsed task or a parse problem may hide open work, so its epic stays open.
+	if len(group.Problems) > 0 || len(group.Tasks) == 0 {
+		return false, nil
+	}
+	for _, task := range group.Tasks {
+		if !task.Done {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // openCleanup cuts branch from origin's base in its own worktree, deletes the epic's group files there,

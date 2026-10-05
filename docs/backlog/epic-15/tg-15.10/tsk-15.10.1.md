@@ -1,0 +1,5 @@
+- [ ] **TSK-15.10.1** One protected-skill list
+  - files: `internal/repo/skills.go`, `internal/mount/claude/claude.go`, `internal/repo/skills_test.go`
+  - accept: repo.Protected and the mount's orchestratorSkills read one list: komodo, plan, respond, run; `review` and `backlog` are gone from both
+  - done_when: `go test ./internal/repo/... ./internal/mount/claude/...`
+  - priority: M

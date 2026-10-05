@@ -1,0 +1,5 @@
+- [ ] **TSK-15.17.4** The local model's permission surface is one table doctor prints
+  - files: `internal/mount/ollama/ollama.go`, `internal/doctor/doctor.go`, `komodo/rules/compact.md`, `internal/mount/ollama/ollama_test.go`, `internal/doctor/doctor_test.go`
+  - accept: doctor prints the roles the local machine may run and that each has read-only tools and a JSON-only result; `komodo machine` refuses a role with write, edit or shell; compact.md states the contract in two lines
+  - done_when: `go test ./internal/mount/ollama/... ./internal/doctor/...`
+  - priority: H

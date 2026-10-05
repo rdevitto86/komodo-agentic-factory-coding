@@ -1,0 +1,5 @@
+- [ ] **TSK-15.6.7** The escalation brief names the session log path and the group's folder
+  - files: `internal/run/drive.go`, `komodo/roles/escalation.md`, `internal/run/drive_test.go`
+  - accept: the brief carries `logs: <worktree>/.komodo/sessions/` and `folder: docs/backlog/epic-NN/tg-NN.M/` so the role reads both without guessing
+  - done_when: `go test ./internal/run/...`
+  - priority: M

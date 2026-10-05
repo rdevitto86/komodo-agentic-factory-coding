@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"komodo/internal/backlog"
 	"komodo/internal/fsx"
@@ -179,55 +177,17 @@ func backlogStatus(status string) bool {
 // errTaskGroupFileGone reports a task whose group file a prior commit already removed.
 var errTaskGroupFileGone = errors.New("its group file is already gone")
 
-// writeStatus writes one task's tick or blocker into its own docs/backlog group file, refusing any
-// status but the tick or the blocker.
+// writeStatus writes one task's tick or blocker into its own task file, refusing any other status.
 func writeStatus(root, taskID, status string) error {
 	if !backlogStatus(status) {
 		return fmt.Errorf("a run writes only DONE or BLOCKED into the backlog, not %s", status)
 	}
-	groupPath, text, found, err := findTaskGroupFile(root, taskID)
+	group, _, found, err := backlog.LocateTask(root, taskID)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return fmt.Errorf("%s: %w", taskID, errTaskGroupFileGone)
 	}
-	out, err := backlog.SetGroupFileTaskStatus(text, taskID, status)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(groupPath, []byte(out), 0o644)
-}
-
-// findTaskGroupFile returns the path and text of the docs/backlog group file that declares taskID,
-// nil when root holds no group files or none names it.
-func findTaskGroupFile(root, taskID string) (path, text string, found bool, err error) {
-	entries, err := os.ReadDir(filepath.Join(root, backlog.GroupFilesDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", "", false, nil
-		}
-		return "", "", false, err
-	}
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			names = append(names, entry.Name())
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		candidate := filepath.Join(root, backlog.GroupFilesDir, name)
-		data, err := os.ReadFile(candidate)
-		if err != nil {
-			return "", "", false, err
-		}
-		file := backlog.ParseGroupFile(string(data))
-		for _, task := range file.Tasks {
-			if task.ID == taskID {
-				return candidate, string(data), true, nil
-			}
-		}
-	}
-	return "", "", false, nil
+	return group.WriteTaskStatus(taskID, status)
 }

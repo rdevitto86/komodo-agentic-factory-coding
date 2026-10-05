@@ -208,8 +208,7 @@ func shippedWorktree(dir, group string) (string, bool, error) {
 	return worktree, true, nil
 }
 
-// appendGroup writes the suite's legacy-grammar group section into the clone's own docs/backlog
-// group file, the shape `komodo migrate` writes.
+// appendGroup writes the suite's legacy-grammar group into the clone's docs/backlog tree, adding its epic folder when missing.
 func appendGroup(dir, groupFile string) error {
 	text, err := os.ReadFile(groupFile)
 	if err != nil {
@@ -220,16 +219,20 @@ func appendGroup(dir, groupFile string) error {
 		return fmt.Errorf("%s names no group", groupFile)
 	}
 	group := parsed.Groups[0]
+	epicID := backlog.EpicIDOfGroup(group.ID)
 	file := backlog.GroupFile{
 		ID: group.ID, Title: group.Title, Priority: groupPriority(group), Status: groupStatus(group),
-		Type: group.Type(), Version: group.Version(), EpicID: group.EpicID, DependsOn: group.DependsOn(),
+		Type: group.Type(), Version: group.Version(), EpicID: epicID, DependsOn: group.DependsOn(),
 		Tasks: groupTasks(group),
 	}
-	dest := filepath.Join(dir, backlog.GroupFilesDir, file.ID+"-"+backlog.Slug(file.Title)+".md")
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
+	if _, err := os.Stat(filepath.Join(backlog.EpicDir(dir, epicID), backlog.EpicFileName)); err != nil {
+		epic := backlog.EpicFile{ID: epicID, Title: group.Title, Status: "READY", Version: group.Version(), Type: group.Type()}
+		if _, err := backlog.WriteEpic(dir, epic); err != nil {
+			return err
+		}
 	}
-	return os.WriteFile(dest, []byte(backlog.RenderGroupFileDocument(file)), 0o644)
+	_, err = backlog.WriteGroup(dir, file)
+	return err
 }
 
 // priorityRank orders a priority letter from most to least urgent, for finding a group's own.

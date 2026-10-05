@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 )
 
 func TestAtOrAboveRanksSeverities(t *testing.T) {
@@ -148,18 +149,16 @@ func TestCloseWaveSkipsTheMergeForASingleModeGroup(t *testing.T) {
 	}
 }
 
-// TestFileFindingsAppendsIntoTheGroupsOwnFile proves a repo holding docs/backlog group files gets
-// its findings filed into the group's own file.
+// TestFileFindingsAppendsIntoTheGroupsOwnFile proves a repo holding a backlog tree gets its findings
+// filed as new task files in the group's own folder, with the group index file left as it was.
 func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "docs", "backlog")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	text := "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-09\ndepends_on: []\n```\n\n" +
-		"- [x] **TSK-09.1.1** One\n  - files: `a/x.go`\n"
-	path := filepath.Join(dir, "TG-09.1-a-group.md")
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+	backlogtest.Seed(t, root, backlog.GroupFile{
+		ID: "TG-09.1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
+		Tasks: []backlog.GroupTask{{ID: "TSK-09.1.1", Title: "One", Done: true, Files: []string{"a/x.go"}}},
+	})
+	header, err := os.ReadFile(groupPath(root, "TG-09.1"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	findings := []Finding{
@@ -169,14 +168,17 @@ func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 1 {
-		t.Fatalf("added = %v", added)
+	if len(added) != 1 || added[0] != "TSK-09.1.2" {
+		t.Fatalf("added = %v, want the next task id", added)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(taskPath(root, "TSK-09.1.2"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the filed finding has no task file of its own: %v", err)
 	}
-	text = string(data)
+	if after, _ := os.ReadFile(groupPath(root, "TG-09.1")); string(after) != string(header) {
+		t.Fatalf("TG.md changed:\n%s", after)
+	}
+	text := string(data)
 	// A filed finding is runnable: READY, its severity's priority, and its package's tests as the proof.
 	for _, want := range []string{"dead branch", "status: READY", "priority: L", "done_when: `go test ./a/...`"} {
 		if !strings.Contains(text, want) {

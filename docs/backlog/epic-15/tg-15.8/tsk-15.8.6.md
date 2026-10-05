@@ -1,0 +1,5 @@
+- [ ] **TSK-15.8.6** The ledger's brief station records the real prompt size per session
+  - files: `internal/run/requests.go`, `internal/ledger/ledger.go`, `internal/run/requests_test.go`
+  - accept: the brief entry carries `chars` and the len/4 token estimate of the prompt that was sent, not of one task's brief
+  - done_when: `go test ./internal/run/... ./internal/ledger/...`
+  - priority: M

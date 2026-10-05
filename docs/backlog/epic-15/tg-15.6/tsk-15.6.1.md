@@ -1,0 +1,5 @@
+- [ ] **TSK-15.6.1** The escalation session loads its own plugin with the escalate skill
+  - files: `internal/mount/claude/plugin.go`, `internal/mount/claude/session.go`, `internal/mount/claude/plugin_test.go`, `komodo/roles/escalation.md`
+  - accept: Render writes .claude/plugins/escalation holding the escalate skill and the guard hook; a test proves every role the line starts has a rendered plugin directory
+  - done_when: `go test ./internal/mount/claude/...`
+  - priority: C

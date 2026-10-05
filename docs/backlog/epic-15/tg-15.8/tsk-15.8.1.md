@@ -1,0 +1,5 @@
+- [ ] **TSK-15.8.1** The role frame, rules, standards and schema appear once per session prompt
+  - files: `internal/run/requests.go`, `internal/line/brief.go`, `internal/line/brief_slots.go`, `internal/run/requests_test.go`, `internal/line/brief_test.go`
+  - accept: BuilderRequest renders the frame, AGENTS.md, standards and the result schema once, then one block per task holding only its title, yaml, files, context and done_when; a 12-task group's prompt holds each stable slot exactly once
+  - done_when: `go test ./internal/run/... ./internal/line/...`
+  - priority: H

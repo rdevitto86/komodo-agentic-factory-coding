@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.10** komodo status shows tokens and cost per group
+  - files: `internal/line/status.go`, `cmd/komodo/line.go`, `internal/line/status_test.go`
+  - accept: each group line ends with `<tokens>k tokens, $<cost>` summed from the ledger for the run
+  - done_when: `go test ./internal/line/... ./cmd/komodo/...`
+  - priority: M

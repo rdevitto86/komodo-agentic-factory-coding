@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.6** The install runs on macOS, Linux and Windows, and doctor exits 0 after each
+  - done_when: `go run ./cmd/komodo doctor`
+  - owner: human
+  - context: `was TSK-08.8.1`, `REQ-1's proof: record each platform's install in the release PR`
+  - priority: C

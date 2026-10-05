@@ -1,0 +1,5 @@
+- [ ] **TSK-15.16.2** The word harness leaves the rules, templates and specs
+  - files: `komodo/rules/backlog.md`, `templates/project/AGENTS.md.tmpl`, `docs/hld.md`, `docs/prd.md`
+  - accept: `grep -rn harness komodo templates docs --include=*.md --include=*.tmpl` prints nothing
+  - done_when: `grep -rLn harness komodo/rules/backlog.md templates/project/AGENTS.md.tmpl docs/hld.md docs/prd.md`
+  - priority: L

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.2** The epic pull request body gains one section per landed group
+  - files: `internal/line/report.go`, `internal/pr/pr.go`, `internal/line/ship.go`, `internal/line/report_test.go`
+  - accept: each landing appends `### <group> <title>`: the tasks, the proofs that ran, the findings closed, and the run's cost and minutes; the section is idempotent per group
+  - done_when: `go test ./internal/line/... ./internal/pr/...`
+  - priority: C

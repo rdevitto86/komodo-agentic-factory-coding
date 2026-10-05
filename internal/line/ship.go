@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -372,12 +373,12 @@ func markReady(client *pr.Client, url string, draft bool) error {
 func tickTasks(
 	plan *Plan, group string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
 ) error {
-	// A no-epic group's own file is already gone once an earlier commit shipped it; nothing left to tick.
-	_, _, ownFileGone, err := backlog.FindGroupFile(group, plan.Group)
+	// A no-epic group's own folder is already gone once an earlier commit shipped it; nothing left to tick.
+	_, found, err := backlog.Locate(group, plan.Group)
 	if err != nil {
 		return err
 	}
-	ownFileGone = !ownFileGone
+	ownFileGone := !found
 	for _, task := range plan.Tasks {
 		current, ok := rootParsed.Task(task.ID)
 		if !ok {
@@ -406,16 +407,16 @@ func tickTasks(
 	return nil
 }
 
-// findingsPath is the file FileFindings wrote into, relative to group: its own docs/backlog file.
+// findingsPath is the group's own backlog folder FileFindings wrote into, relative to group.
 func findingsPath(group, groupID string) (string, error) {
-	path, _, found, err := backlog.FindGroupFile(group, groupID)
+	dir, found, err := backlog.Locate(group, groupID)
 	if err != nil {
 		return "", err
 	}
 	if !found {
 		return "", fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
 	}
-	return filepath.Rel(group, path)
+	return filepath.Rel(group, dir.Dir)
 }
 
 // declaredFiles is every file the plan's tasks declare.
@@ -471,10 +472,8 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, file := range ended {
-		if err := os.Remove(file); err != nil {
-			return nil, err
-		}
+	if err := removeEnded(ended); err != nil {
+		return nil, err
 	}
 	if err := stageWork(group, declared); err != nil {
 		return nil, err
@@ -502,44 +501,57 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	return rebaseForRepair(root, group, plan.Branch, base)
 }
 
-// endedEpicFiles lists the docs/backlog group files a group's commit deletes: its epic's every file once no
-// other group of that epic is open, or its own file when it names no epic.
+// endedEpicFiles lists the paths a group's commit deletes: the whole epic folder once no sibling stays open.
 func endedEpicFiles(worktree, groupID string) ([]string, error) {
-	paths, err := filepath.Glob(filepath.Join(worktree, "docs", "backlog", "*.md"))
+	tree, err := backlog.LoadTree(worktree)
 	if err != nil {
 		return nil, err
 	}
-	files := make(map[string]backlog.GroupFile, len(paths))
-	own := ""
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		files[path] = backlog.ParseGroupFile(string(data))
-		if files[path].ID == groupID {
-			own = path
-		}
-	}
-	if own == "" {
+	own, ok := tree.Group(groupID)
+	if !ok {
 		return nil, nil
 	}
-	epic := files[own].EpicID
-	if epic == "" {
-		return []string{own}, nil
+	epicFile := filepath.Join(own.EpicDir, backlog.EpicFileName)
+	if _, err := os.Stat(epicFile); err != nil {
+		return own.Paths(), nil
 	}
-	var ended []string
-	for _, path := range paths {
-		file := files[path]
-		if file.EpicID != epic {
+	ended := []string{epicFile}
+	for _, group := range tree.Groups {
+		if group.EpicDir != own.EpicDir {
 			continue
 		}
-		if file.ID != groupID && slices.ContainsFunc(file.Tasks, func(task backlog.GroupTask) bool { return !task.Done }) {
+		if group.File.ID != groupID && slices.ContainsFunc(group.File.Tasks, func(task backlog.GroupTask) bool { return !task.Done }) {
 			return nil, nil
 		}
-		ended = append(ended, path)
+		ended = append(ended, group.Paths()...)
 	}
 	return ended, nil
+}
+
+// removeEnded deletes the ended backlog files, then every folder they leave empty.
+func removeEnded(files []string) error {
+	dirs := map[string]bool{}
+	for _, file := range files {
+		if err := os.Remove(file); err != nil {
+			return err
+		}
+		dirs[filepath.Dir(file)] = true
+		dirs[filepath.Dir(filepath.Dir(file))] = true
+	}
+	ordered := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		ordered = append(ordered, dir)
+	}
+	// Deeper folders go first, so an epic folder is tried once its group folders are gone.
+	sort.Slice(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
+	for _, dir := range ordered {
+		if filepath.Base(dir) == filepath.Base(backlog.GroupFilesDir) {
+			continue
+		}
+		// A folder still holding files stays; only the emptied ones go.
+		_ = os.Remove(dir)
+	}
+	return nil
 }
 
 // conflictFixes turns each conflicted file into a fix naming the base it conflicts with.
@@ -746,25 +758,20 @@ func writeCredentialNote(root, worktree, group, title, branch string, cause erro
 	return commitStaged(worktree, nil, credentialNoteSubject(title, group))
 }
 
-// addBlockerNote writes note into the group's own docs/backlog file, returning every task the note
-// left BLOCKED.
+// addBlockerNote writes note into the group's own the group index file, returning every task the note left BLOCKED.
 func addBlockerNote(worktree, groupID string, note backlog.BlockerNote) ([]string, error) {
-	path, text, found, err := backlog.FindGroupFile(worktree, groupID)
+	dir, found, err := backlog.Locate(worktree, groupID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
 		return nil, fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
 	}
-	noted, err := backlog.AddGroupFileNote(text, note)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+	if err := dir.WriteNote(note); err != nil {
 		return nil, err
 	}
 	var blocked []string
-	for _, task := range backlog.ParseGroupFile(noted).Tasks {
+	for _, task := range dir.File.Tasks {
 		if !task.Done {
 			blocked = append(blocked, task.ID)
 		}
@@ -840,18 +847,12 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 
 // dropCredentialNote removes the group's blocker note from its branch and commits that, when it holds one.
 func dropCredentialNote(worktree string, handoff ShipHandoff) error {
-	path, text, found, err := backlog.FindGroupFile(worktree, handoff.Group)
-	if err != nil {
+	dir, found, err := backlog.Locate(worktree, handoff.Group)
+	if err != nil || !found {
 		return err
 	}
-	if !found {
-		return nil
-	}
-	out, removed := backlog.RemoveGroupFileNote(text)
-	if !removed {
-		return nil
-	}
-	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+	removed, err := dir.RemoveNote()
+	if err != nil || !removed {
 		return err
 	}
 	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s's forge credential is back", handoff.Group))
@@ -998,7 +999,7 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 	return files, added
 }
 
-// bookkeeping reports a path Ship writes itself: a group file.
+// bookkeeping reports a path Ship writes itself: a backlog file.
 func bookkeeping(path string) bool {
 	return strings.HasPrefix(path, "docs/backlog/")
 }

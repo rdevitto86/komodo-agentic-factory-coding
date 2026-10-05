@@ -1,0 +1,5 @@
+- [ ] **TSK-15.3.7** The session-start sweep refreshes the machine layer even for a repo with no .komodo
+  - files: `internal/hooks/prune.go`, `internal/hooks/prune_test.go`
+  - accept: startSweep launches the detached sweep whenever the global layer is installed; with no .komodo it publishes the binary and re-renders the global layer and skips only the repo prune
+  - done_when: `go test ./internal/hooks/...`
+  - priority: H

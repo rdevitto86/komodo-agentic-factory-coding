@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/gate"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -532,18 +534,16 @@ func TestSyncBinary(t *testing.T) {
 	}
 }
 
-// groupFile renders one docs/backlog group file of epic whose one task is ticked when done.
-func groupFile(id, epic string, done bool) string {
-	box := " "
-	if done {
-		box = "x"
+// cleanupGroup is one group of epic whose one task is ticked when done.
+func cleanupGroup(id, epic string, done bool) backlog.GroupFile {
+	return backlog.GroupFile{
+		ID: id, Title: "A group", Priority: "H", Status: "READY", Type: "feat", Version: "0.1.0", EpicID: epic,
+		Tasks: []backlog.GroupTask{{ID: "TSK-" + strings.TrimPrefix(id, "TG-") + ".1", Title: "Do it", Done: done, Files: []string{"a.go"}}},
 	}
-	return "## [" + id + "] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: " + epic + "\n```\n\n" +
-		"- [" + box + "] **TSK-" + strings.TrimPrefix(id, "TG-") + ".1** Do it\n  - files: `a.go`\n"
 }
 
-// cleanupRepo builds a root on main, current with its bare origin, holding files under docs/backlog.
-func cleanupRepo(t *testing.T, files map[string]string) (root, bare string) {
+// cleanupRepo builds a root on main, current with its bare origin, holding groups in its docs/backlog tree.
+func cleanupRepo(t *testing.T, groups ...backlog.GroupFile) (root, bare string) {
 	t.Helper()
 	bare = filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", "-b", "main", bare)
@@ -555,19 +555,42 @@ func cleanupRepo(t *testing.T, files map[string]string) (root, bare string) {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/.komodo/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, text := range files {
-		if err := os.WriteFile(filepath.Join(root, "docs", "backlog", name), []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	backlogtest.Seed(t, root, groups...)
+	commitPushMain(t, root)
+	return root, bare
+}
+
+// commitPushMain commits every change in root, pushes main, and fetches, so origin/main is current with it.
+func commitPushMain(t *testing.T, root string) {
+	t.Helper()
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "seed")
 	runGit(t, root, "push", "origin", "main")
 	runGit(t, root, "fetch", "origin")
-	return root, bare
+}
+
+// TestEndedEpicsMapsAnEndedEpicToItsWholeFolder proves an epic with every task ticked maps to its the epic index file,
+// each the group index file and each task file, while an epic with an open task maps to nothing.
+func TestEndedEpicsMapsAnEndedEpicToItsWholeFolder(t *testing.T) {
+	root, _ := cleanupRepo(t,
+		cleanupGroup("TG-01.1", "EPIC-01", true),
+		cleanupGroup("TG-01.2", "EPIC-01", true),
+		cleanupGroup("TG-02.1", "EPIC-02", false),
+	)
+	ended, err := endedEpics(root, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"docs/backlog/epic-01/EPIC.md",
+		"docs/backlog/epic-01/tg-01.1/TG.md",
+		"docs/backlog/epic-01/tg-01.1/tsk-01.1.1.md",
+		"docs/backlog/epic-01/tg-01.2/TG.md",
+		"docs/backlog/epic-01/tg-01.2/tsk-01.2.1.md",
+	}, "\n")
+	if len(ended) != 1 || strings.Join(ended["EPIC-01"], "\n") != want {
+		t.Fatalf("ended = %v; want EPIC-01's whole folder and nothing of EPIC-02", ended)
+	}
 }
 
 func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
@@ -584,11 +607,11 @@ func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root, bare := cleanupRepo(t, map[string]string{
-				"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true),
-				"TG-01.2-b.md": groupFile("TG-01.2", "EPIC-01", tc.lastDone),
-				"TG-02.1-c.md": groupFile("TG-02.1", "EPIC-02", false),
-			})
+			root, bare := cleanupRepo(t,
+				cleanupGroup("TG-01.1", "EPIC-01", true),
+				cleanupGroup("TG-01.2", "EPIC-01", tc.lastDone),
+				cleanupGroup("TG-02.1", "EPIC-02", false),
+			)
 			var created [][]string
 			client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
 				created = append(created, args)
@@ -616,8 +639,8 @@ func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
 				t.Fatalf("pr create = %q, want the cleanup branch against main", args)
 			}
 			left := gitOut(t, bare, "ls-tree", "--name-only", "chore/cleanup-epic-01", "docs/backlog/")
-			if left != "docs/backlog/TG-02.1-c.md" {
-				t.Fatalf("cleanup branch keeps %q, want only the open epic's file", left)
+			if left != "docs/backlog/epic-02" {
+				t.Fatalf("cleanup branch keeps %q, want only the open epic's folder", left)
 			}
 			if _, err := os.Stat(filepath.Join(root, ".komodo", "wt", "cleanup-epic-01")); err == nil {
 				t.Fatal("the cleanup worktree outlived its PR")
@@ -632,12 +655,12 @@ func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
 // TestSyncCleanupKeepsAnEpicOpenWhenAFileFailsToParse proves a group file whose checkbox line
 // misses the task grammar never counts as ended, so its epic's cleanup PR is never opened.
 func TestSyncCleanupKeepsAnEpicOpenWhenAFileFailsToParse(t *testing.T) {
-	malformed := "## [TG-01.2] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: EPIC-01\n```\n\n" +
-		"- [ ] not a task line, missing the bold id\n"
-	root, bare := cleanupRepo(t, map[string]string{
-		"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true),
-		"TG-01.2-b.md": malformed,
-	})
+	root, bare := cleanupRepo(t, cleanupGroup("TG-01.1", "EPIC-01", true), cleanupGroup("TG-01.2", "EPIC-01", true))
+	malformed := filepath.Join(backlog.GroupDirPath(root, "TG-01.2"), backlog.TaskFileName("TSK-01.2.1"))
+	if err := os.WriteFile(malformed, []byte("- [ ] not a task line, missing the bold id\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitPushMain(t, root)
 	var created int
 	client := &pr.Client{Run: func(string, ...string) (string, error) {
 		created++
@@ -659,7 +682,7 @@ func TestSyncCleanupKeepsAnEpicOpenWhenAFileFailsToParse(t *testing.T) {
 }
 
 func TestSyncCleanupSkipsWhatItCannotOrNeedNotOpen(t *testing.T) {
-	ended := map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)}
+	ended := cleanupGroup("TG-01.1", "EPIC-01", true)
 	cases := []struct {
 		name     string
 		arrange  func(t *testing.T, root, bare string)
@@ -714,7 +737,7 @@ func TestSyncCleanupSkipsWhatItCannotOrNeedNotOpen(t *testing.T) {
 // TestSyncCleanupReturnsAForgeThatRefusesThePR proves a refused PR still cleans up the worktree, its
 // tip ref and the branch it already pushed, so a retry opens the PR instead of failing forever.
 func TestSyncCleanupReturnsAForgeThatRefusesThePR(t *testing.T) {
-	root, bare := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
+	root, bare := cleanupRepo(t, cleanupGroup("TG-01.1", "EPIC-01", true))
 	client := &pr.Client{Run: func(string, ...string) (string, error) {
 		return "", errors.New("HTTP 422")
 	}}
@@ -751,7 +774,7 @@ func TestSyncCleanupRemovesTheWorktreeAndTipWhenThePushFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the server hook is a shell script")
 	}
-	root, bare := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
+	root, bare := cleanupRepo(t, cleanupGroup("TG-01.1", "EPIC-01", true))
 	hook := filepath.Join(bare, "hooks", "pre-receive")
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)

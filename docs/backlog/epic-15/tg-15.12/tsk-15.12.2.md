@@ -1,0 +1,6 @@
+- [ ] **TSK-15.12.2** A bundled short flag ending in o on format-patch is read as -o
+  - files: `internal/guard/tokenize.go`, `internal/guard/table.go`, `internal/guard/guard_test.go`
+  - accept: `git format-patch -1 -ko ../patches` is refused for a line session; a table row proves it
+  - done_when: `go test ./internal/guard/...`
+  - context: `was TSK-11.29.2`
+  - priority: M

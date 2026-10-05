@@ -1,0 +1,5 @@
+- [ ] **TSK-15.11.4** Gate test builds use -trimpath so a temp worktree shares the build cache
+  - files: `internal/gate/gate.go`, `internal/gate/gate_test.go`
+  - accept: TestArgs and the build checks carry `-trimpath`; a test proves it
+  - done_when: `go test ./internal/gate/...`
+  - priority: M

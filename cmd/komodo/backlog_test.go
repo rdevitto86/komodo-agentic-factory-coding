@@ -32,8 +32,51 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(data)
 }
 
-// writeGroupFile writes one group file under docs/backlog, creating the directory as needed.
-func writeGroupFile(t *testing.T, root, name, text string) {
+// seedGroup writes flat group text into the tree: epic index if missing, group index, one file per task.
+func seedGroup(t *testing.T, root, text string) string {
+	t.Helper()
+	file := backlog.ParseGroupFile(text)
+	if file.ID == "" {
+		t.Fatalf("seedGroup: no group heading in %q", text)
+	}
+	epicID := file.EpicID
+	if epicID == "" {
+		epicID = backlog.EpicIDOfGroup(file.ID)
+	}
+	seedEpic(t, root, epicID, file.Version, file.Type)
+	dir, err := backlog.WriteGroup(root, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// seedEpic writes an epic's the epic index file at version under root, keeping one that exists.
+func seedEpic(t *testing.T, root, epicID, version, kind string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(backlog.EpicDir(root, epicID), backlog.EpicFileName)); err == nil {
+		return
+	}
+	epic := backlog.EpicFile{ID: epicID, Title: "Epic " + epicID, Status: "READY", Version: version, Type: kind, GroupsMax: 99}
+	if _, err := backlog.WriteEpic(root, epic); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedRawGroupDir writes the group index file verbatim into docs/backlog/<epicDir>/<groupDir>, for a fixture lint must reject.
+func seedRawGroupDir(t *testing.T, root, epicDir, groupDir, text string) {
+	t.Helper()
+	dir := filepath.Join(root, groupFilesDir, epicDir, groupDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, backlog.GroupFileName), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeFlatGroupFile writes one flat group file directly under docs/backlog, the layout migrate moves into the tree.
+func writeFlatGroupFile(t *testing.T, root, name, text string) {
 	t.Helper()
 	dir := filepath.Join(root, groupFilesDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -44,13 +87,34 @@ func writeGroupFile(t *testing.T, root, name, text string) {
 	}
 }
 
+// groupText joins every file of the group folder holding groupID, the group index file first, as one text.
+func groupText(t *testing.T, root, groupID string) string {
+	t.Helper()
+	group, found, err := backlog.Locate(root, groupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("no group %s under %s", groupID, root)
+	}
+	var out string
+	for _, path := range group.Paths() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out += string(data) + "\n"
+	}
+	return out
+}
+
 // TestRunBacklogListsEveryOpenGroup proves backlog prints every group file, since a finished one is deleted.
 func TestRunBacklogListsEveryOpenGroup(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
-	writeGroupFile(t, root, "TG-02.1-second.md",
+	seedGroup(t, root,
 		"## [TG-02.1] Second group [P: M] [BLOCKED]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-02\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-02.1.1** Another task\n  - files: `b.go`\n")
 	out := captureStdout(t, func() { runBacklog(root) })
@@ -68,7 +132,7 @@ func TestRunBacklogListsEveryOpenGroup(t *testing.T) {
 // TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs a flat backlog file.
 func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	problems, err := lintProblems(root)
@@ -83,8 +147,9 @@ func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 // TestLintProblemsReportsAGroupFileWithAMalformedHeading proves a bad heading never vanishes silently.
 func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-broken.md",
-		"## [tg-01.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
+	seedEpic(t, root, "EPIC-01", "1.0.0", "feat")
+	seedRawGroupDir(t, root, "epic-01", "tg-01.1",
+		"## [tg-01.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\n```\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -94,57 +159,60 @@ func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
 	}
 }
 
-// TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles proves group-file lint
+// TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles proves the tree's lint
 // checks what the legacy grammar's lint checks, not only the parse errors ParseGroupFile reports.
 func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task with no files\n  - done_when: `go test ./...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
 	}
-	if len(problems) != 2 {
-		t.Fatalf("problems = %v, want a no-version and a no-files problem", problems)
+	noVersion, noFiles := false, false
+	for _, problem := range problems {
+		noVersion = noVersion || strings.Contains(problem, "EPIC-01: no version")
+		noFiles = noFiles || strings.Contains(problem, "TSK-01.1.1") && strings.Contains(problem, "declares no files")
+	}
+	if !noVersion || !noFiles {
+		t.Fatalf("problems = %v, want the epic's no-version and the task's no-files problem", problems)
 	}
 }
 
-// TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles proves group files in the same
-// epic must agree on the version it ships, as the legacy grammar's epics and groups must.
-func TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles(t *testing.T) {
+// TestLintProblemsReportsAGroupDeclaringItsOwnVersion proves a group index carrying a version is a problem;
+// only the epic index declares one.
+func TestLintProblemsReportsAGroupDeclaringItsOwnVersion(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
-	writeGroupFile(t, root, "TG-01.2-second.md",
-		"## [TG-01.2] Second group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.2.1** A task\n  - files: `b.go`\n")
+	seedRawGroupDir(t, root, "epic-01", "tg-01.2",
+		"## [TG-01.2] Second group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\ndepends_on: []\n```\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
 	}
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "EPIC-01") && strings.Contains(problem, "TG-01.2") {
+		if strings.Contains(problem, "tg-01.2") && strings.Contains(problem, "version belongs in the epic") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("want a problem naming the epic version disagreement; got %v", problems)
+		t.Fatalf("want a problem naming the group's own version; got %v", problems)
 	}
 }
 
-// TestLintProblemsReportsTwoFilesDeclaringTheSameGroupID proves lint catches a duplicate group id
-// instead of leaving findGroupFile to append to whichever file sorts first.
-func TestLintProblemsReportsTwoFilesDeclaringTheSameGroupID(t *testing.T) {
+// TestLintProblemsReportsTwoFoldersDeclaringTheSameGroupID proves lint catches a duplicate group id
+// instead of leaving Locate to pick whichever folder sorts first.
+func TestLintProblemsReportsTwoFoldersDeclaringTheSameGroupID(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
-	writeGroupFile(t, root, "TG-01.1-second.md",
-		"## [TG-01.1] Same id again [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.2** Another task\n  - files: `b.go`\n")
+	seedRawGroupDir(t, root, "epic-01", "tg-01.2",
+		"## [TG-01.1] Same id again [P: H] [READY]\n\n```yaml\ntype: feat\ndepends_on: []\n```\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -168,7 +236,7 @@ func TestLintProblemsRejectsAGroupFileWithMoreThan12Tasks(t *testing.T) {
 	for i := 1; i <= 13; i++ {
 		text += fmt.Sprintf("- [ ] **TSK-63.1.%d** Task %d\n  - files: `a/t%d.go`\n  - done_when: `go test ./...`\n\n", i, i, i)
 	}
-	writeGroupFile(t, root, "TG-63.1-large-group.md", text)
+	seedGroup(t, root, text)
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -197,13 +265,30 @@ func TestRunBacklogOnAnEmptyRepoPrintsNoGroups(t *testing.T) {
 func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	root := t.TempDir()
 	out := captureStdout(t, func() {
+		runBacklogAdd(root, []string{"EPIC-08", "Epic", "eight", "--version", "1.0.0", "--goal", "Ship eight.", "--status", "READY"})
+	})
+	if !strings.Contains(out, "EPIC-08") {
+		t.Fatalf("add printed no epic id: %s", out)
+	}
+	epicPath := filepath.Join(root, groupFilesDir, "epic-08", backlog.EpicFileName)
+	data, err := os.ReadFile(epicPath)
+	if err != nil {
+		t.Fatalf("epic file not written: %v", err)
+	}
+	for _, want := range []string{"## [EPIC-08] Epic eight [READY]", "version: 1.0.0", "type: feat", "\nShip eight.\n"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("epic file lacks %q: %s", want, data)
+		}
+	}
+
+	out = captureStdout(t, func() {
 		runBacklogAdd(root, []string{"TG-08.1", "A", "new", "group"})
 	})
 	if !strings.Contains(out, "TG-08.1") {
 		t.Fatalf("add printed no group id: %s", out)
 	}
-	path := filepath.Join(root, groupFilesDir, "TG-08.1-a-new-group.md")
-	data, err := os.ReadFile(path)
+	dir := filepath.Join(root, groupFilesDir, "epic-08", "tg-08.1")
+	data, err = os.ReadFile(filepath.Join(dir, backlog.GroupFileName))
 	if err != nil {
 		t.Fatalf("group file not written: %v", err)
 	}
@@ -213,6 +298,9 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	if !strings.Contains(string(data), "type: feat") {
 		t.Fatalf("group file keeps no type: %s", data)
 	}
+	if strings.Contains(string(data), "version:") || strings.Contains(string(data), "epic:") {
+		t.Fatalf("group file repeats what the epic holds: %s", data)
+	}
 
 	out = captureStdout(t, func() {
 		runBacklogAdd(root, []string{"TG-08.1", "Its", "first", "task", "--files", "a.go,b.go"})
@@ -220,29 +308,66 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	if !strings.Contains(out, "TSK-08.1.1") {
 		t.Fatalf("add printed no task id: %s", out)
 	}
-	data, err = os.ReadFile(path)
+	data, err = os.ReadFile(filepath.Join(dir, "tsk-08.1.1.md"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("task file not written: %v", err)
 	}
 	if !strings.Contains(string(data), "- [ ] **TSK-08.1.1** Its first task") {
-		t.Fatalf("group file gained no task: %s", data)
+		t.Fatalf("task file = %s", data)
 	}
 	if !strings.Contains(string(data), "files: `a.go`, `b.go`") {
 		t.Fatalf("task carries no files: %s", data)
 	}
+	out = captureStdout(t, func() {
+		runBacklogAdd(root, []string{"TG-08.1", "Its", "second", "task", "--files", "c.go", "--done-when", "go test ./..."})
+	})
+	if !strings.Contains(out, "TSK-08.1.2") {
+		t.Fatalf("a second add printed no next task id: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tsk-08.1.2.md")); err != nil {
+		t.Fatalf("second task file not written: %v", err)
+	}
 
 	backlogOut := captureStdout(t, func() { runBacklog(root) })
-	if !strings.Contains(backlogOut, "TG-08.1") || !strings.Contains(backlogOut, "1 group(s)") {
+	if !strings.Contains(backlogOut, "EPIC-08") || !strings.Contains(backlogOut, "TG-08.1") || !strings.Contains(backlogOut, "1 group(s)") {
 		t.Fatalf("backlog after add = %s", backlogOut)
 	}
 }
 
-// TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile proves a repo holding both writes into its
-// group file, never the legacy backlog file, since group files are the current grammar.
-func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile(t *testing.T) {
+// TestRunBacklogAddRefusesAGroupWhoseEpicFolderIsMissing proves a group lands only under an epic that exists.
+func TestRunBacklogAddRefusesAGroupWhoseEpicFolderIsMissing(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-q")
-	writeGroupFile(t, root, "TG-08.1-existing.md",
+	got := runCLI(t, root, "", "add", "TG-08.1", "A", "group", "with", "no", "epic")
+	if got.code != 1 || !strings.Contains(got.stderr, "add the epic first") {
+		t.Fatalf("add exited %d: %s%s; want a refusal naming the missing epic", got.code, got.stdout, got.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(root, groupFilesDir)); !os.IsNotExist(err) {
+		t.Fatalf("add wrote into docs/backlog with no epic: %v", err)
+	}
+}
+
+// TestRunBacklogAddRefusesAnEpicWithNoVersionOrTwice proves an epic declares its version once.
+func TestRunBacklogAddRefusesAnEpicWithNoVersionOrTwice(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	if got := runCLI(t, root, "", "add", "EPIC-08", "Eight"); got.code != 1 || !strings.Contains(got.stderr, "--version") {
+		t.Fatalf("add with no version exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if got := runCLI(t, root, "", "add", "EPIC-08", "Eight", "--version", "1.0.0"); got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if got := runCLI(t, root, "", "add", "EPIC-08", "Eight again", "--version", "1.0.0"); got.code != 1 || !strings.Contains(got.stderr, "already exists") {
+		t.Fatalf("a second add of the epic exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
+// TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFolder proves a repo holding both writes into its
+// group folder, never the legacy backlog file, since the tree is the current grammar.
+func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFolder(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	seedGroup(t, root,
 		"## [TG-08.1] Existing [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-08.1.1** A task\n  - files: `a.go`\n")
 	legacyPath := filepath.Join(root, backlog.LegacyName)
@@ -253,12 +378,12 @@ func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile(t *testing.T) {
 	if got.code != 0 {
 		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
 	}
-	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-08.1-existing.md"))
+	data, err := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-08.1"), "tsk-08.1.2.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), "A second task") {
-		t.Fatalf("group file gained no task: %s", data)
+		t.Fatalf("group folder gained no task file: %s", data)
 	}
 	legacyData, err := os.ReadFile(legacyPath)
 	if err != nil {
@@ -269,10 +394,13 @@ func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile(t *testing.T) {
 	}
 }
 
-// TestMainDispatchesBacklogAndAdd proves `komodo backlog` and `komodo add` reach the group-file commands.
+// TestMainDispatchesBacklogAndAdd proves `komodo backlog` and `komodo add` reach the tree commands.
 func TestMainDispatchesBacklogAndAdd(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-q")
+	if epic := runCLI(t, root, "", "add", "EPIC-09", "Nine", "--version", "1.0.0"); epic.code != 0 {
+		t.Fatalf("add epic exited %d: %s%s", epic.code, epic.stdout, epic.stderr)
+	}
 	add := runCLI(t, root, "", "add", "TG-09.1", "A", "dispatched", "group")
 	if add.code != 0 {
 		t.Fatalf("add exited %d: %s%s", add.code, add.stdout, add.stderr)
@@ -280,15 +408,15 @@ func TestMainDispatchesBacklogAndAdd(t *testing.T) {
 	if !strings.Contains(add.stdout, "TG-09.1") {
 		t.Fatalf("add printed no group id: %s", add.stdout)
 	}
-	path := filepath.Join(root, groupFilesDir, "TG-09.1-a-dispatched-group.md")
+	path := filepath.Join(root, groupFilesDir, "epic-09", "tg-09.1", backlog.GroupFileName)
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("add wrote no group file: %v", err)
+		t.Fatalf("add wrote no group folder: %v", err)
 	}
 	backlog := runCLI(t, root, "", "backlog")
 	if backlog.code != 0 {
 		t.Fatalf("backlog exited %d: %s%s", backlog.code, backlog.stdout, backlog.stderr)
 	}
-	if !strings.Contains(backlog.stdout, "TG-09.1") || !strings.Contains(backlog.stdout, "1 group(s)") {
+	if !strings.Contains(backlog.stdout, "EPIC-09") || !strings.Contains(backlog.stdout, "TG-09.1") || !strings.Contains(backlog.stdout, "1 group(s)") {
 		t.Fatalf("backlog through main = %s", backlog.stdout)
 	}
 }
@@ -348,7 +476,7 @@ func TestRunBacklogAddRejectsInvalidGroupPriorityOrStatus(t *testing.T) {
 // TestLintProblemsRefusesAnOpenGroupAtATaggedVersion proves lint reads the repo's own tags.
 func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 	root := emptyRepo(t)
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
@@ -368,7 +496,7 @@ func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 // TestLintPrintsAGroupFileTasksCallerNote proves komodo lint shows a group file's own notes.
 func TestLintPrintsAGroupFileTasksCallerNote(t *testing.T) {
 	root := t.TempDir()
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `internal/a/a.go`\n  - done_when: `go test ./internal/a/...`\n")
 	if notes := groupFileNotes(root); len(notes) != 1 || !strings.Contains(notes[0], "TSK-01.1.1") {
@@ -379,7 +507,7 @@ func TestLintPrintsAGroupFileTasksCallerNote(t *testing.T) {
 // TestCheckBaseDefaultsToTheGroupsEpicBranch proves check task diffs from the branch the line cut, not the default.
 func TestCheckBaseDefaultsToTheGroupsEpicBranch(t *testing.T) {
 	root := emptyRepo(t)
-	writeGroupFile(t, root, "TG-01.1-first.md",
+	seedGroup(t, root,
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")

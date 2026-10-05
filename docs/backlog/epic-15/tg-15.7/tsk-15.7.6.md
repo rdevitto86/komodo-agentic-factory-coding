@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.6** A dollar cap per role and per group stops a session that overspends
+  - files: `internal/mount/claude/claude.go`, `internal/mount/claude/session.go`, `internal/profile/profile.go`, `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
+  - accept: `--max-budget-usd` comes from the profile's `budget_usd` per role; the group's running total from the ledger stops the group with reason `budget` at the profile's `group_budget_usd`; both default to unlimited on a subscription plan
+  - done_when: `go test ./internal/mount/claude/... ./internal/conductor/...`
+  - priority: H

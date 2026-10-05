@@ -1,0 +1,5 @@
+- [ ] **TSK-15.4.7** komodo tag tags every untagged changelog version and release check runs inside doctor
+  - files: `cmd/komodo/release.go`, `internal/release/release.go`, `internal/doctor/doctor.go`, `cmd/komodo/release_test.go`, `internal/release/release_test.go`
+  - accept: `komodo tag` creates `v<version>` for each changelog heading with no tag, oldest first, at the commit whose changelog introduced the heading; doctor runs release.Check with the shipped groups' versions and reports a version the changelog does not name
+  - done_when: `go test ./cmd/komodo/... ./internal/release/... ./internal/doctor/...`
+  - priority: H

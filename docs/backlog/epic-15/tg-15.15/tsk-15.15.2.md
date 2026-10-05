@@ -1,0 +1,5 @@
+- [ ] **TSK-15.15.2** Doctor lists Blocked or escalated runs older than seven days
+  - files: `internal/doctor/leftovers.go`, `internal/doctor/leftovers_test.go`
+  - accept: each such run is a note naming the group, its state, its age and `komodo resume` or `komodo abandon`; doctor never deletes it
+  - done_when: `go test ./internal/doctor/...`
+  - priority: M

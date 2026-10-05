@@ -1,0 +1,5 @@
+- [x] **TSK-15.1.3** Lint holds the tree: folder names match ids, version lives only in EPIC.md, caps per group and epic
+  - files: `internal/backlog/lint.go`, `internal/backlog/tree.go`, `internal/backlog/tree_test.go`, `cmd/komodo/backlog.go`
+  - accept: a misnamed folder, a version in TG.md, a task under the wrong group, more than 20 unique files across a group's open tasks, or more groups than groups_max each fail lint; the CLI lint runs backlog.Lint on the assembled backlog
+  - done_when: `go test ./internal/backlog/...`, `go run ./cmd/komodo lint`
+  - priority: C

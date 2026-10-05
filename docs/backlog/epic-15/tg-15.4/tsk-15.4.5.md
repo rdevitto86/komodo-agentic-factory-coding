@@ -1,0 +1,5 @@
+- [ ] **TSK-15.4.5** The pre-push gate refuses a push that adds a backlog file to a critical ref
+  - files: `internal/gate/gate.go`, `internal/gate/gate_test.go`
+  - accept: PushProblem names each docs/backlog path the pushed commits add to main or another critical ref, and allows the same push to an epic branch
+  - done_when: `go test ./internal/gate/...`
+  - priority: C

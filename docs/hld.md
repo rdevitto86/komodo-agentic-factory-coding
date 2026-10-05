@@ -43,7 +43,7 @@ Five principles shape it:
 | Guard | Catches common mistakes on model tool calls | A hook in every session |
 | Host mount | Carries a brief to one host's sessions through the host contract | Inside the binary, one per host |
 | Profiles | Map each role to a model and effort, per plan | Files the conductor reads |
-| Backlog | The committed plan: one file per task group, ticked as work completes, with blockers written down | `docs/backlog/`, in the repo |
+| Backlog | The committed plan: a tree of epic folders, group folders and task files, ticked as work completes, with blockers written down | `docs/backlog/`, in the repo |
 | Run state and ledger | Each group's stage and sessions, and every stage's time and tokens | `.komodo/` on each machine |
 | Plugins | Notifiers, tool packs and stage hooks | Installed disabled; enabled per machine |
 
@@ -101,7 +101,7 @@ flowchart TD
     VF -->|none left| PR[7 Prepare<br/>commit, hooks, rebase,<br/>integration]
     PR --> S[8 Ship<br/>push, draft PR, labels]
     S --> H[a human merges]
-    H --> CL[an epic's files are deleted<br/>when its last group merges]
+    H --> CL[an epic's folder is deleted<br/>when its last group ships]
 ```
 
 Double-bordered nodes are model sessions. Everything else is the conductor with no model.
@@ -125,7 +125,7 @@ Terms in the Names table of `README.md` keep that meaning. This design adds:
 |---|---|
 | Task group | 1 to 12 related tasks, like one engineering story; one builder, one review, one pull request |
 | Task list | The group's tasks as checkboxes: the builder's brief and the reviewer's yardstick |
-| Backlog | The committed plan: one file per task group, deleted when its epic ends; `CHANGELOG.md` keeps the history |
+| Backlog | The committed plan: one folder per epic holding one folder per task group and one file per task, deleted when its epic ends; `CHANGELOG.md` keeps the history |
 | Card | A task group compiled by ingest: its task list, files, checks, context and size |
 | Conductor | The `komodo` binary running the line |
 | Orchestrator | The primary session: the person's interface to the line |
@@ -133,7 +133,7 @@ Terms in the Names table of `README.md` keep that meaning. This design adds:
 | Lens | One review angle, run as its own session: correctness, security and readiness, or quality |
 | Fix list | The repair task list built from verified findings or failed checks |
 | Escalation | A stop the conductor can't settle alone: a blocked builder, a time limit, a failure |
-| Blocker note | What the conductor writes into a group's backlog file, on its branch, when the orchestrator can't settle an escalation; published as a draft PR labelled `status/blocked` |
+| Blocker note | What the conductor writes into a group's `TG.md`, on its branch, when the orchestrator can't settle an escalation; published as a draft PR labelled `status/blocked` |
 | Bound and unbound | Paced to a subscription's usage windows, or to a spend budget on API billing |
 | Economy mode | The cheaper profile and single review lens used on a Pro plan |
 | Golden group | A real merged change rewound to its parent, its own tests hidden from the builder |

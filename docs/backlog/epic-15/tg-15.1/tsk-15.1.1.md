@@ -1,0 +1,6 @@
+- [x] **TSK-15.1.1** LoadRoot walks epic folders, group folders and task files and inherits version and epic
+  - files: `internal/backlog/tree.go`, `internal/backlog/load.go`, `internal/backlog/backlog.go`, `internal/backlog/tree_test.go`, `internal/backlog/load_test.go`
+  - accept: docs/backlog/epic-NN/EPIC.md, epic-NN/tg-NN.M/TG.md and tg-NN.M/tsk-NN.M.K.md assemble into one GroupFile per group, task files in numeric order, with the epic's version and id inherited
+  - accept: Epic carries Title, Status, Goal, GroupsMax and Version from EPIC.md
+  - done_when: `go test ./internal/backlog/...`
+  - priority: C

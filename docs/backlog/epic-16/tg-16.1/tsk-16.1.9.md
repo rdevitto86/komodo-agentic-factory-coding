@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.9** The owner cuts 1.0.0
+  - done_when: `git rev-parse -q --verify refs/tags/v1.0.0`
+  - owner: human
+  - context: `was TSK-08.8.4`, `through the release skill, once the proofs above are done`
+  - priority: C

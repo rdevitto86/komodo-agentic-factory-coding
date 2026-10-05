@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.8** The owner settles the PRD's open questions
+  - files: `docs/prd.md`
+  - owner: human
+  - context: `was TSK-08.8.3`, `docs/prd.md#open-questions`
+  - priority: M

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.6.5** Sync reconciles a group a person landed by hand
+  - files: `internal/run/sync.go`, `internal/run/sync_test.go`
+  - accept: when every task of a Blocked or escalated group is ticked on origin's epic branch, sync marks its run Shipped and merged and closes its worktree and tip
+  - done_when: `go test ./internal/run/...`
+  - priority: H

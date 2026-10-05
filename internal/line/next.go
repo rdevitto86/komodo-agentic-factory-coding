@@ -3,6 +3,9 @@ package line
 
 import (
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"time"
 
 	"komodo/internal/backlog"
@@ -343,14 +346,42 @@ func ReadyGroups(root string) ([]backlog.Group, error) {
 	return readyGroups(root, parsed, true), nil
 }
 
+// sortGroupsNumeric orders groups by id, digit runs as numbers, so a group id precedes a group id.
+func sortGroupsNumeric(groups []backlog.Group) {
+	sort.SliceStable(groups, func(i, j int) bool { return idLess(groups[i].ID, groups[j].ID) })
+}
+
+// idRun splits an id into digit and non-digit runs.
+var idRun = regexp.MustCompile(`\d+|\D+`)
+
+// idLess compares two ids run by run, digits as numbers and the rest as text.
+func idLess(a, b string) bool {
+	runsA, runsB := idRun.FindAllString(a, -1), idRun.FindAllString(b, -1)
+	for index := 0; index < len(runsA) && index < len(runsB); index++ {
+		left, right := runsA[index], runsB[index]
+		if left == right {
+			continue
+		}
+		numLeft, errLeft := strconv.Atoi(left)
+		numRight, errRight := strconv.Atoi(right)
+		if errLeft == nil && errRight == nil {
+			return numLeft < numRight
+		}
+		return left < right
+	}
+	return len(runsA) < len(runsB)
+}
+
 // readyGroups is every group holding a ready agent task whose base can be cut from; stacked also
 // accepts the branch of a group listed before it, and without stacked only the first is returned.
 func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Group {
 	defaultBase := DefaultBase(root)
 	checkOrigin := hasOrigin(root)
 	ahead := map[string]bool{}
+	groups := append([]backlog.Group(nil), parsed.Groups...)
+	sortGroupsNumeric(groups)
 	var out []backlog.Group
-	for _, group := range parsed.Groups {
+	for _, group := range groups {
 		if !group.HasReadyTask() {
 			continue
 		}

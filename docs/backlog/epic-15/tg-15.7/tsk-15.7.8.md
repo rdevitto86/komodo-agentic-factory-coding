@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.8** The time warning derives from the group clock so it can fire
+  - files: `internal/hooks/timewarn.go`, `internal/mount/claude/plugin.go`, `internal/hooks/timewarn_test.go`
+  - accept: timewarn's budget is the group's remaining minutes at session start; it warns at 80 percent of that, and reads only the transcript bytes past its last offset
+  - done_when: `go test ./internal/hooks/... ./internal/mount/claude/...`
+  - priority: M

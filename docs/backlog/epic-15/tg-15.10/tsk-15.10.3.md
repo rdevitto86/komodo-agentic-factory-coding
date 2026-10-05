@@ -1,0 +1,5 @@
+- [ ] **TSK-15.10.3** The release skill renders only in the toolkit checkout
+  - files: `internal/mount/claude/claude.go`, `internal/mount/claude/claude_test.go`
+  - accept: a product repo's .claude/skills has no release skill; the toolkit's does
+  - done_when: `go test ./internal/mount/claude/...`
+  - priority: M

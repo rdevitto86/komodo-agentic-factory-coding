@@ -80,18 +80,18 @@ func TestRemoveGroupFileNoteRestoresTheGroupAsItWas(t *testing.T) {
 	}
 }
 
-// TestFindGroupFileLocatesTheFileNamingTheGroup proves FindGroupFile reads every file under
-// docs/backlog until it finds the one whose heading names groupID.
-func TestFindGroupFileLocatesTheFileNamingTheGroup(t *testing.T) {
+// TestFindGroupFileLocatesTheGroupsIndexFile proves FindGroupFile walks the tree and returns the
+// the group index file whose heading names groupID.
+func TestFindGroupFileLocatesTheGroupsIndexFile(t *testing.T) {
 	root := t.TempDir()
-	dir := root + "/docs/backlog"
-	writeFile(t, dir+"/TG-01.1-a.md", "## [TG-01.1] A [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\n```\n")
-	writeFile(t, dir+"/TG-01.2-b.md", "## [TG-01.2] B [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\n```\n")
+	seedEpic(t, root, "EPIC-01", "1.0.0")
+	seedGroup(t, root, "TG-01.1", "## [TG-01.1] A [P: H] [READY]\n\n```yaml\ntype: fix\n```\n", nil)
+	seedGroup(t, root, "TG-01.2", "## [TG-01.2] B [P: H] [READY]\n\n```yaml\ntype: fix\n```\n", nil)
 	path, text, found, err := FindGroupFile(root, "TG-01.2")
 	if err != nil || !found {
 		t.Fatalf("found = %v, err = %v", found, err)
 	}
-	if !strings.HasSuffix(path, "TG-01.2-b.md") || !strings.Contains(text, "[TG-01.2]") {
+	if !strings.HasSuffix(path, "tg-01.2/TG.md") || !strings.Contains(text, "[TG-01.2]") {
 		t.Fatalf("path = %q, text = %q", path, text)
 	}
 	if _, _, found, err := FindGroupFile(root, "TG-09.9"); err != nil || found {

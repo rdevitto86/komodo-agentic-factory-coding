@@ -1,0 +1,5 @@
+- [ ] **TSK-15.10.4** The build skill stops repeating the builder role
+  - files: `komodo/skills/build/SKILL.md`, `komodo/roles/builder.md`
+  - accept: the Order and Boundaries text lives in the role only; the skill keeps the komodo check loop and nothing the role already says
+  - done_when: `go run ./cmd/komodo lint`
+  - priority: L

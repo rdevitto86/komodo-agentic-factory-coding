@@ -45,10 +45,10 @@ func writeCheckFile(t *testing.T, root, name, body string) {
 func TestCheckRunsEachKindThroughOneEntryPoint(t *testing.T) {
 	root := checkRepo(t)
 	onChanged := `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":3,"title":"on it","detail":"d"}]}`
-	offChanged := `{"findings":[{"severity":"high","class":"bug","file":"docs/backlog/TG-91.1-a-checked-group.md","line":1,"title":"off it","detail":"d"}]}`
+	offChanged := `{"findings":[{"severity":"high","class":"bug","file":"docs/backlog/epic-91/tg-91.1/TG.md","line":1,"title":"off it","detail":"d"}]}`
 	noLineOnChanged := `{"findings":[{"severity":"high","class":"test-gap","file":"a/one.go","title":"whole file","detail":"d"}]}`
 	noLineOffChanged := `{"findings":[{"severity":"high","class":"test-gap",` +
-		`"file":"docs/backlog/TG-91.1-a-checked-group.md","title":"whole file off","detail":"d"}]}`
+		`"file":"docs/backlog/epic-91/tg-91.1/TG.md","title":"whole file off","detail":"d"}]}`
 	results := t.TempDir()
 	writeCheckFile(t, results, "on.json", onChanged)
 	writeCheckFile(t, results, "off.json", offChanged)
@@ -69,7 +69,7 @@ func TestCheckRunsEachKindThroughOneEntryPoint(t *testing.T) {
 		{"task scope", []string{"scope", "TSK-91.1.1"}, 1, "c/stray.go is edited outside"},
 		{"group scope", []string{"scope", "TG-91.1"}, 1, "1 problem(s)"},
 		{"finding on a changed line", []string{"findings", filepath.Join(results, "on.json"), "--base", "main"}, 0, "0 problem(s)"},
-		{"finding off the diff", []string{"findings", filepath.Join(results, "off.json")}, 1, "docs/backlog/TG-91.1-a-checked-group.md:1 off it"},
+		{"finding off the diff", []string{"findings", filepath.Join(results, "off.json")}, 1, "docs/backlog/epic-91/tg-91.1/TG.md:1 off it"},
 		{
 			"finding with no line on a changed file",
 			[]string{"findings", filepath.Join(results, "noline-on.json"), "--base", "main"}, 0, "0 problem(s)",

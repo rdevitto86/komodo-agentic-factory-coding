@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.7** Cost on a resumed session is stamped as the delta
+  - files: `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
+  - accept: a repair that resumes a session records cost and tokens minus the session's previous totals, so the ledger's sum equals the host's total
+  - done_when: `go test ./internal/conductor/...`
+  - priority: H

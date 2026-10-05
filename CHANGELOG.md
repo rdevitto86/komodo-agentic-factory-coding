@@ -2,6 +2,12 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## Unreleased — 1.0.0-beta.6
+
+- **The backlog is a tree:** one folder per epic with its goal and version, one folder per group, one file per task; `komodo add` writes it and `komodo migrate` moves a flat backlog into it (decision 0014).
+- **A group merges into its epic branch** with its ticked task list, and the epic pull request carries the goal and one section per landed group; a person reviews that one PR (decision 0006, amended).
+- **Lint caps the work:** 20 declared files per group, `groups_max` groups per epic; prune deletes a local branch only once its remote is gone or merged, pushed, unheld and not critical (decision 0012, amended).
+
 ## 1.0.0-beta.5 — 2026-10-04
 
 - **Every hook runs one fixed, always-current binary,** registered once per event, with one-step setup on macOS, Linux, Windows and WSL2.

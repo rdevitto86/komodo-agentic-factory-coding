@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.7** Labels apply to the epic pull request and blocked pull requests only
+  - files: `cmd/komodo/pr.go`, `internal/line/ship.go`, `cmd/komodo/pr_test.go`
+  - accept: `komodo pr label` on an epic branch labels the epic PR; ShipBlocked labels its PR; no other path calls the label client
+  - done_when: `go test ./cmd/komodo/... ./internal/line/...`
+  - priority: M

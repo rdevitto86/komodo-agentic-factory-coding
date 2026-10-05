@@ -440,7 +440,7 @@ func TestBuildBriefFillsFilesAndContextFromTheQueueCard(t *testing.T) {
 	globBacklog := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/*.go]\n" +
 		"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\n  - docs/spec/SDD.md#Other\n```\n"
-	backlogtest.SeedText(t, root, globBacklog)
+	reseedGroupFiles(t, root, globBacklog)
 	write("a/two.go", "package a\n\nfunc Two() {}\n")
 	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
 		`{"group":"TG-07.1","files":["a/one.go","a/two.go"],"context":["docs/spec/SDD.md#Other"]}`)
@@ -475,7 +475,7 @@ func TestBuildBriefKeepsOnlyATasksOwnFilesFromTheCard(t *testing.T) {
 		"done_when:\n  - go test ./a/...\n```\n\n" +
 		"#### [TSK-07.1.2] Second task [P: C] [READY]\n```yaml\nfiles: [b/two.go]\n" +
 		"done_when:\n  - go test ./b/...\n```\n"
-	backlogtest.SeedText(t, root, twoTaskBacklog)
+	reseedGroupFiles(t, root, twoTaskBacklog)
 	write("b/two.go", "package b\n\nfunc Two() {}\n")
 	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
 		`{"group":"TG-07.1","files":["a/one.go","b/two.go"],"context":[],`+

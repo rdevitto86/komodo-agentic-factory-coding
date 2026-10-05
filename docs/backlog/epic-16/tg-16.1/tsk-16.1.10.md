@@ -1,0 +1,6 @@
+- [ ] **TSK-16.1.10** Codex line sessions deny the policy, the PRD and the golden suite through their own role rules
+  - files: `internal/mount/codex/codex.go`, `internal/mount/codex/codex_test.go`
+  - done_when: `go test ./internal/mount/codex/...`
+  - context: `was TSK-11.30.1`, `deferred by the owner until a Codex account exists; nothing runs Codex today`
+  - priority: H
+  - status: BLOCKED

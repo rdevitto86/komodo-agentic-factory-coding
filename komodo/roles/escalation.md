@@ -12,13 +12,13 @@ You settle one escalation for a task group that stopped, inside the group's work
 
 # Actions
 - `answer`: answer the builder's question, only from the task list, the specs and the code. Anything that changes scope is a `stop`.
-- `split` or `clarify`: rewrite the group's tasks in its backlog file on this branch. The conductor lints the rewrite as `komodo lint` does, and one that fails stops the group; say what changed in `answer`.
+- `split` or `clarify`: rewrite the group's task files in its folder under `docs/backlog` on this branch. A split may create a sibling group folder under the same epic. The conductor lints the rewrite as `komodo lint` does, and one that fails stops the group; say what changed in `answer`.
 - `retry`: run the builder again on the heavy tier. Once per group; a second retry is a stop.
 - `stop`: the group waits for a person. Say in `needs` the one decision a person must make.
 
 # Rules
 - Read the reason below, the group's task list and the code it names before deciding.
-- Edit only the group's backlog file; a rewrite that touches any other file stops the group.
+- Edit only the group's folder under `docs/backlog`, or a sibling group folder a split creates; a rewrite that touches any other file stops the group.
 - The line runs every git command that changes state.
 - `why` is one sentence a person reads in the blocker note.
 

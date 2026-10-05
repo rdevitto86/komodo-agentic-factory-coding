@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
@@ -446,22 +445,7 @@ func TestTheRepoLockCoversEveryGroup(t *testing.T) {
 // stageFixtures copies a staged repo's group files and its builder role into root.
 func stageFixtures(t *testing.T, staged, root string) {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(staged, "docs", "backlog"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join(staged, "docs", "backlog", entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "docs", "backlog", entry.Name()), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	copyBacklogTree(t, staged, root)
 	role := filepath.Join(RolesDir, "builder.md")
 	data, err := os.ReadFile(filepath.Join(staged, role))
 	if err != nil {
@@ -480,6 +464,8 @@ func cutRepo(t *testing.T, text string) string {
 	t.Helper()
 	root, _ := remotedRepo(t)
 	runGit(t, root, "push", "origin", "main")
+	// The seeded epic ships a version; its branch on origin keeps a cut from opening the epic's pull request here.
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
 	stageFixtures(t, repo(t, text), root)
 	return root
 }
@@ -576,7 +562,7 @@ func TestAGroupWithAFilelessTaskOverlapsEveryOpenGroup(t *testing.T) {
 	root := twoOpenRuns(t)
 	fileless := "\n### [TG-15.4] Fourth\n```yaml\ntype: feat\nversion: 2.3.0\n```\n\n" +
 		"#### [TSK-15.4.1] Four [P: C] [READY]\n```yaml\ndone_when: [\"true\"]\n```\n"
-	backlogtest.SeedText(t, root, twoGroupBacklog+fileless)
+	reseed(t, root, twoGroupBacklog+fileless)
 	if err := RefuseOpenRun(root, "TG-15.4"); err == nil || !strings.Contains(err.Error(), "is open") {
 		t.Fatalf("err = %v; a task declaring no files may touch any, so its group must be refused", err)
 	}
@@ -697,6 +683,8 @@ func TestStartCutsAGroupFromTheFetchedOriginMain(t *testing.T) {
 	runGit(t, clone, "add", "-A")
 	runGit(t, clone, "commit", "-m", "merged upstream")
 	runGit(t, clone, "push", "origin", "main")
+	// The epic's branch is cut from that merged main on origin; the root holds no copy of it at all.
+	runGit(t, clone, "push", "origin", "main:refs/heads/feat/2.0.0")
 
 	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
 	if err != nil {

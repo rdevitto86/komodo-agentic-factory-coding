@@ -1,0 +1,5 @@
+- [ ] **TSK-15.7.5** The turn cap is passed per role as a flag from the profile
+  - files: `internal/mount/claude/session.go`, `internal/mount/claude/claude.go`, `internal/profile/profile.go`, `internal/mount/claude/session_test.go`
+  - accept: each role's profile entry carries `turns`; the session gets `--max-turns <n>` and the env var; the orchestrator keeps 150; a test proves the argv per role
+  - done_when: `go test ./internal/mount/claude/... ./internal/profile/...`
+  - priority: C

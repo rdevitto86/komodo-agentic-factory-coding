@@ -1,0 +1,5 @@
+- [ ] **TSK-15.13.5** Doctor fails on profile roles nothing reads and plugin folders with no role
+  - files: `internal/doctor/roles.go`, `internal/doctor/roles_test.go`
+  - accept: a profile role no code reads, a rendered plugin folder with no role file, or a skill in no protected list is a problem
+  - done_when: `go test ./internal/doctor/...`
+  - priority: M

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.14.3** The builder's classes cover the read-only text tools and the module commands a Go or TypeScript task needs
+  - files: `internal/allow/allow.go`, `internal/guard/table.go`, `internal/allow/allow_test.go`, `internal/guard/guard_test.go`
+  - accept: files gains grep, sed -n, awk, sort, uniq, diff, jq, wc, find without -exec or -delete; build gains go mod tidy and go generate; komodo-check gains komodo lint and komodo list; a table row allows each for a builder
+  - done_when: `go test ./internal/allow/... ./internal/guard/...`
+  - priority: C

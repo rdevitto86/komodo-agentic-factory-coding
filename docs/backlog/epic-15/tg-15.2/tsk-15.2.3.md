@@ -1,0 +1,5 @@
+- [x] **TSK-15.2.3** Sync, drive, doctor and eval read the tree
+  - files: `internal/run/sync.go`, `internal/run/drive.go`, `internal/doctor/leftovers.go`, `internal/doctor/backlog.go`, `internal/eval/run.go`, `internal/run/sync_test.go`, `internal/doctor/leftovers_test.go`, `internal/doctor/backlog_test.go`, `internal/eval/run_test.go`
+  - accept: sync's cleanup PR removes a finished epic's whole folder; a resumed builder gets TG.md and every task file; doctor warns on a flat file left under docs/backlog; the eval writes its suite groups as a tree
+  - done_when: `go test ./internal/run/... ./internal/doctor/... ./internal/eval/...`
+  - priority: C

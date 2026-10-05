@@ -2,7 +2,7 @@
 # Downloads this machine's komodo release, verifies its SHA-256, and hands every other step to komodo install.
 # Environment: KOMODO_VERSION, KOMODO_RELEASE_URL. From a checkout with Go, run go run ./cmd/komodo install instead.
 set -eu
-base="${KOMODO_RELEASE_URL:-https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download}/${KOMODO_VERSION:-v1.0.0-beta.2}"
+base="${KOMODO_RELEASE_URL:-https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download}/${KOMODO_VERSION:-v1.0.0-beta.5}"
 name="komodo-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
 dir="$HOME/.komodo/bin"
 mkdir -p "$dir"

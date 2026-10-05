@@ -1,0 +1,5 @@
+- [ ] **TSK-15.11.2** Test and vet parallelism is capped in an interactive gate
+  - files: `internal/gate/gate.go`, `internal/gate/gate_test.go`
+  - accept: TestArgs adds `-p 4` and the vet commands add `-p 4` unless KOMODO_RUN_PID or CI is set; a test proves both argv shapes
+  - done_when: `go test ./internal/gate/...`
+  - priority: M

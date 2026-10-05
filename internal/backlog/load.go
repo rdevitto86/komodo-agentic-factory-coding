@@ -7,28 +7,46 @@ import (
 	"strings"
 )
 
-// GroupFilesDir is where one file per task group lives, the grammar komodo/rules/backlog.md names.
+// GroupFilesDir holds one folder per epic, one per group, and one file per task.
 const GroupFilesDir = "docs/backlog"
 
-// LoadRoot loads the queue at root: every docs/backlog/ group file, merged into one Backlog, empty
-// when root holds none.
+// LoadRoot loads the queue at root: every epic, group and task under docs/backlog, merged into one
+// Backlog, empty when root holds none.
 func LoadRoot(root string) (Backlog, error) {
-	paths, err := groupFilePaths(root)
+	tree, err := LoadTree(root)
 	if err != nil {
 		return Backlog{}, err
 	}
-	return loadGroupFiles(paths)
+	return FromTree(tree), nil
 }
 
-// Exists reports whether root holds a queue: at least one docs/backlog/ group file.
+// Exists reports whether root holds a queue: at least one group folder under docs/backlog.
 func Exists(root string) bool {
-	paths, err := groupFilePaths(root)
-	return err == nil && len(paths) > 0
+	tree, err := LoadTree(root)
+	return err == nil && len(tree.Groups) > 0
 }
 
-// groupFilePaths lists every *.md file directly under root's docs/backlog/, sorted, nil when the
-// directory is absent.
-func groupFilePaths(root string) ([]string, error) {
+// FromTree converts a loaded tree into the shape the line runs on.
+func FromTree(tree Tree) Backlog {
+	out := Backlog{Problems: append([]string(nil), tree.Problems...)}
+	for _, epic := range tree.Epics {
+		out.Epics = append(out.Epics, Epic{ID: epic.ID, Title: epic.Title, Status: epic.Status,
+			Goal: epic.Goal, GroupsMax: epic.GroupsMax, version: epic.Version})
+	}
+	for _, group := range tree.Groups {
+		for _, problem := range group.File.Problems {
+			out.Problems = append(out.Problems, group.Path+": "+problem)
+		}
+		if group.File.ID == "" {
+			continue
+		}
+		out.Groups = append(out.Groups, groupFileToGroup(group.File))
+	}
+	return out
+}
+
+// FlatGroupFiles lists every *.md directly under root's docs/backlog, the layout before the tree.
+func FlatGroupFiles(root string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(root, GroupFilesDir))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -47,28 +65,19 @@ func groupFilePaths(root string) ([]string, error) {
 	return paths, nil
 }
 
-// loadGroupFiles reads and merges every group file into one Backlog, synthesizing one epic per
-// group file's own epic and version so Lint's version-matches-epic check has something to compare.
-func loadGroupFiles(paths []string) (Backlog, error) {
-	var out Backlog
-	seenEpics := map[string]bool{}
+// LoadFlatGroupFiles parses every flat group file at the given paths, for migrate to move into the tree.
+func LoadFlatGroupFiles(paths []string) ([]GroupFile, error) {
+	var out []GroupFile
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return Backlog{}, err
+			return nil, err
 		}
 		file := ParseGroupFile(string(data))
-		for _, problem := range file.Problems {
-			out.Problems = append(out.Problems, path+": "+problem)
-		}
 		if file.ID == "" {
 			continue
 		}
-		out.Groups = append(out.Groups, groupFileToGroup(file))
-		if file.EpicID != "" && file.Version != "" && !seenEpics[file.EpicID] {
-			seenEpics[file.EpicID] = true
-			out.Epics = append(out.Epics, Epic{ID: file.EpicID, Title: "Ships as `" + file.Version + "`"})
-		}
+		out = append(out, file)
 	}
 	return out, nil
 }

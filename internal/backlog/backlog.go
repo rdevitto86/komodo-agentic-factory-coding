@@ -113,14 +113,26 @@ func (t Task) Open() bool { return t.Status != "DONE" && t.Status != "BLOCKED" }
 // Ready reports whether the task is planned enough for the line to run it.
 func (t Task) Ready() bool { return t.Status == "READY" || t.Status == "IN_PROGRESS" }
 
-// Epic is an epic heading and its title line.
+// Epic is one epic: id, title, status, goal and group cap from its index, or a legacy heading's title.
 type Epic struct {
-	ID    string
-	Title string
+	ID        string
+	Title     string
+	Status    string
+	Goal      string
+	GroupsMax int
+	version   string
 }
 
-// Version extracts the version from the epic's title, parsing "Ships as x.y.z" format.
+// NewEpic builds an epic carrying the version its the epic index file declares.
+func NewEpic(id, title, version string) Epic {
+	return Epic{ID: id, Title: title, GroupsMax: DefaultGroupsMax, version: version}
+}
+
+// Version is the version the epic ships: its index file's own, else parsed from a legacy title.
 func (e Epic) Version() string {
+	if e.version != "" {
+		return e.version
+	}
 	idx := strings.Index(e.Title, "Ships as `")
 	if idx < 0 {
 		return ""

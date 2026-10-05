@@ -1,0 +1,5 @@
+- [ ] **TSK-15.13.2** Doctor fails on a stale global layer
+  - files: `internal/doctor/render.go`, `internal/doctor/render_test.go`
+  - accept: a V1 marker, a folder under ~/.claude/skills not in the current marker, ~/.claude/standards, or an agent the repo no longer renders is a problem naming `komodo sync`
+  - done_when: `go test ./internal/doctor/...`
+  - priority: H

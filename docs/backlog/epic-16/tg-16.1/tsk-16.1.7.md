@@ -1,0 +1,5 @@
+- [ ] **TSK-16.1.7** komodo eval --runs 3 meets the success criteria on all three platforms
+  - done_when: `go run ./cmd/komodo eval --runs 3`
+  - owner: human
+  - context: `was TSK-08.8.2`, `docs/prd.md#success-criteria`
+  - priority: C

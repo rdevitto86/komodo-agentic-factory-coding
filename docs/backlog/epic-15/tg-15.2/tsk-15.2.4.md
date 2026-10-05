@@ -1,0 +1,5 @@
+- [x] **TSK-15.2.4** The rule, the plan skill, the planner and escalation roles, and the templates describe the tree
+  - files: `komodo/rules/backlog.md`, `komodo/skills/plan/SKILL.md`, `komodo/roles/planner.md`, `komodo/roles/escalation.md`, `komodo/skills/run/SKILL.md`, `templates/project/AGENTS.md.tmpl`
+  - accept: every model-facing file names the tree, the inheritance and the two caps, and none names a flat group file
+  - done_when: `go run ./cmd/komodo lint`
+  - priority: H

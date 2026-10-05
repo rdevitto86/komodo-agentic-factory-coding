@@ -1,0 +1,5 @@
+- [ ] **TSK-15.5.8** A cut uses the run's forge client and --no-ship opens no epic pull request
+  - files: `internal/line/cut.go`, `internal/line/epic.go`, `internal/run/drive.go`, `internal/line/cut_test.go`, `internal/line/epic_test.go`
+  - accept: line.Start takes the plan's pr client instead of pr.New(root), so a test or a dry run never reaches the real forge; with --no-ship the epic branch is cut but no epic pull request opens until the first landing
+  - done_when: `go test ./internal/line/... ./internal/run/...`
+  - priority: H

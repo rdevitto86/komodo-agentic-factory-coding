@@ -1,0 +1,5 @@
+- [ ] **TSK-15.10.5** Agents render only for roles something invokes, with the profile's model
+  - files: `internal/mount/claude/claude.go`, `internal/mount/claude/claude_test.go`, `komodo/roles/summarizer.md`
+  - accept: builder, reviewer, planner, responder and scout render as agents; summarizer is deleted; architect, researcher and tester render only when their brief templates are filled by code; each agent's model is the profile tier's model
+  - done_when: `go test ./internal/mount/claude/...`
+  - priority: M
