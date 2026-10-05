@@ -1,0 +1,5 @@
+- [ ] **TSK-15.19.5** The local model's tier is closed
+  - files: `internal/mount/ollama/ollama.go`, `internal/mount/ollama/ollama_test.go`, `komodo/rules/compact.md`
+  - accept: a test proves the ~/.komodo/config.json overlay cannot grant a local model a tool; compact.md states the contract in two lines: read what the brief shows, return only the JSON
+  - done_when: `go test ./internal/mount/ollama/...`
+  - priority: M

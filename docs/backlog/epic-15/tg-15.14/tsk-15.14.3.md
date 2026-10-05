@@ -1,5 +1,5 @@
-- [ ] **TSK-15.14.3** The builder's classes cover the read-only text tools and the module commands a Go or TypeScript task needs
-  - files: `internal/allow/allow.go`, `internal/guard/table.go`, `internal/allow/allow_test.go`, `internal/guard/guard_test.go`
-  - accept: files gains grep, sed -n, awk, sort, uniq, diff, jq, wc, find without -exec or -delete; build gains go mod tidy and go generate; komodo-check gains komodo lint and komodo list; a table row allows each for a builder
-  - done_when: `go test ./internal/allow/... ./internal/guard/...`
+- [ ] **TSK-15.14.3** The orchestrator may destroy its own branches, worktrees, files and stashes without a prompt
+  - files: `internal/mount/claude/claude.go`, `internal/mount/claude/permissions.go`, `internal/guard/git.go`, `internal/guard/table.go`, `internal/mount/claude/claude_test.go`
+  - accept: komodo renders an allow list into the repo settings for the reversible and local-destructive git operations: rm, branch -d and -D, worktree add and remove, reset, clean, stash drop, checkout and switch, so the host's own classifier never prompts; the guard refuses only the critical set; table rows prove branch -D of a feature branch is allowed and of main refused
+  - done_when: `go test ./internal/mount/claude/... ./internal/guard/...`
   - priority: C

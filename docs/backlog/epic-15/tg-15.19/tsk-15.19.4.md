@@ -1,0 +1,5 @@
+- [ ] **TSK-15.19.4** A global bypass mode is a doctor problem and a line session ignores it
+  - files: `internal/doctor/render.go`, `internal/mount/claude/session.go`, `internal/doctor/render_test.go`, `internal/mount/claude/session_test.go`
+  - accept: defaultMode bypassPermissions or skipPermissions in the user's settings is a doctor problem naming the file; a test proves a line session's argv still carries --permission-mode dontAsk with that setting present
+  - done_when: `go test ./internal/doctor/... ./internal/mount/claude/...`
+  - priority: M

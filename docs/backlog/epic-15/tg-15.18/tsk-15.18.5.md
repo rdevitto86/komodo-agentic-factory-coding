@@ -1,0 +1,5 @@
+- [ ] **TSK-15.18.5** The guard enforces a role's classes when asked, and rendered agents ask
+  - files: `internal/guard/guard.go`, `internal/guard/hook.go`, `internal/mount/claude/claude.go`, `internal/guard/guard_test.go`, `internal/mount/claude/claude_test.go`
+  - accept: komodo guard --role <role> refuses a shell command outside the role's classes and an edit by a read-only role, naming the class that would allow it; agentFile renders tools, model, maxTurns from the profile, disallowedTools: mcp__* and a hooks block whose PreToolUse runs komodo guard --role <role> on Agent, Bash, Edit, MultiEdit, NotebookEdit, Task and Write; a test spawns a rendered builder under auto mode and proves git push is refused and go test allowed
+  - done_when: `go test ./internal/guard/... ./internal/mount/claude/...`
+  - priority: C

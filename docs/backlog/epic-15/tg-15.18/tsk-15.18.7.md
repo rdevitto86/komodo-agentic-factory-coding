@@ -1,0 +1,5 @@
+- [ ] **TSK-15.18.7** Sessions never hang on a pager or a watcher
+  - files: `internal/mount/claude/session.go`, `internal/guard/guard.go`, `internal/guard/table.go`, `internal/mount/claude/session_test.go`, `internal/guard/guard_test.go`
+  - accept: every session's environment sets PAGER=cat and GIT_PAGER=cat; the guard refuses git rebase -i, git add -p, komodo status --watch, tail -f and less or vim in any session, naming the non-interactive form
+  - done_when: `go test ./internal/mount/claude/... ./internal/guard/...`
+  - priority: M

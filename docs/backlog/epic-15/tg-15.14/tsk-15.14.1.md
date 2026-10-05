@@ -1,5 +1,5 @@
-- [ ] **TSK-15.14.1** The orchestrator's deny list names komodo's own files, not the host's state
-  - files: `internal/mount/claude/claude.go`, `internal/guard/paths.go`, `internal/mount/claude/claude_test.go`, `internal/guard/paths_test.go`
-  - accept: `Edit(~/.claude/*)` is replaced by the exact files komodo renders: ~/.claude/settings.json, ~/.claude/.komodo-rendered, ~/.claude/AGENTS.md and the rendered skill and agent folders; ~/.claude/plans/**, ~/.claude/projects/**, ~/.claude/todos/** and ~/.claude/CLAUDE.local.md are writable; the guard's config paths match
-  - done_when: `go test ./internal/mount/claude/... ./internal/guard/...`
+- [ ] **TSK-15.14.1** The critical set is one policy: refs gain stg and staging, and critical paths are named
+  - files: `komodo/policy.json`, `internal/guard/policy.go`, `internal/guard/git.go`, `internal/guard/table.go`, `internal/guard/guard_test.go`
+  - accept: critical_refs holds main, master, trunk, stg, staging, prod, production, release/*, hotfix/*; critical_paths defaults to komodo/policy.json, docs/prd.md, eval/**, .github/**, install.sh, install.ps1; a session's rm, git rm or mv of a critical path is refused with the path named, while an edit on a branch stays allowed; a table row proves each
+  - done_when: `go test ./internal/guard/...`
   - priority: C

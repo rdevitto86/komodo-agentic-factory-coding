@@ -1,0 +1,5 @@
+- [ ] **TSK-15.19.2** Doctor renders each tier's effective permissions the way the host loads them
+  - files: `internal/doctor/tiers.go`, `internal/doctor/tiers_test.go`, `internal/doctor/doctor.go`
+  - accept: for the line tier doctor reads the role settings and plugin and fails when a global allow, deny or MCP server would be loaded; for the orchestrator it prints the five refusals and the rendered allow list; for the local model it prints the no-tools row; the three rows match docs/lld.md#permissions
+  - done_when: `go test ./internal/doctor/...`
+  - priority: H

@@ -1,5 +1,5 @@
-- [ ] **TSK-15.14.2** Command classes live in one package the mount and lint share
-  - files: `internal/allow/allow.go`, `internal/allow/allow_test.go`, `internal/mount/claude/permissions.go`
-  - accept: allow.Classes holds files, git-read, build, test, lint, format and komodo-check with their fixed prefixes and per-language additions; the Claude mount renders from it and nothing else lists a prefix
-  - done_when: `go test ./internal/allow/... ./internal/mount/claude/...`
+- [ ] **TSK-15.14.2** The rendered deny list leaves the settings file; the guard is the orchestrator's whole boundary
+  - files: `internal/mount/claude/claude.go`, `internal/mount/claude/claude_test.go`, `internal/guard/paths.go`, `internal/guard/paths_test.go`
+  - accept: the repo's .claude/settings.json carries only the hook registration and attribution off; the guard's config-path rule names the files komodo renders under ~/.claude plus git's hook and config paths, so ~/.claude/plans, projects, todos and CLAUDE.local.md are writable; a test proves a Write to ~/.claude/plans/x.md passes
+  - done_when: `go test ./internal/mount/claude/... ./internal/guard/...`
   - priority: C

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.18.6** A subagent with no komodo role gets the read-and-build set
+  - files: `internal/guard/guard.go`, `internal/guard/table.go`, `internal/guard/guard_test.go`
+  - accept: inside a spawned agent that carries no role, the guard allows the orchestrator tier minus destructive git, rm and pushes: read-only git, build, test, lint, format and komodo reads; the spawn is detected from the host's agent marker in the hook payload; table rows prove an Explore agent's git log passes and its git branch -D is refused
+  - done_when: `go test ./internal/guard/...`
+  - priority: H

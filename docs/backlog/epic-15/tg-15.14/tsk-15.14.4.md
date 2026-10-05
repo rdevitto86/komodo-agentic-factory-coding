@@ -1,5 +1,5 @@
-- [ ] **TSK-15.14.4** The line tier allows the device files and the session's temp root
-  - files: `internal/guard/paths.go`, `internal/guard/table.go`, `internal/guard/paths_test.go`
-  - accept: /dev/null, /dev/stdout, /dev/stderr, and paths under the session's TMPDIR and GOTMPDIR pass the outside-the-worktree rule for a line session; a table row proves each
-  - done_when: `go test ./internal/guard/...`
+- [ ] **TSK-15.14.4** Git hooks never refuse a person; a session is still refused at the tool call
+  - files: `internal/gate/gate.go`, `internal/gate/githook.go`, `internal/gate/gate_test.go`, `cmd/komodo/githook.go`
+  - accept: with no session marker in the environment, the pre-commit and pre-push hooks print the rule they would have applied and exit 0; with KOMODO_ROLE or KOMODO_SESSION set they refuse as before; a test proves both
+  - done_when: `go test ./internal/gate/... ./cmd/komodo/...`
   - priority: C

@@ -1,0 +1,5 @@
+- [ ] **TSK-15.14.6** The rules say act on your own branch and hand over only the critical set
+  - files: `komodo/AGENTS.md`, `docs/decisions/0015-three-permission-tiers-person-orchestrator-and-line.md`, `docs/lld.md`
+  - accept: AGENTS.md tells a session to switch, delete and clean its own branches and worktrees itself and to hand a person only a critical ref, a remote delete of a critical ref, an external post, spending, or a command the host refused, once and in one line; decision 0015 records the three tiers with their tables; the LLD's permissions section is the matrix doctor checks
+  - done_when: `go run ./cmd/komodo lint`
+  - priority: H

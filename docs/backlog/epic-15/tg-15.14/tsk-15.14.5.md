@@ -1,5 +1,5 @@
-- [ ] **TSK-15.14.5** Every role with a shell declares its command classes
-  - files: `komodo/roles/responder.md`, `komodo/roles/tester.md`, `komodo/roles/escalation.md`, `internal/mount/claude/permissions_test.go`
-  - accept: responder: files, git-read, build, test, lint, format, komodo-check; tester: files, build, test, lint, format; escalation gains komodo-check; a test fails on a shell role with no classes
-  - done_when: `go test ./internal/mount/claude/...`
+- [ ] **TSK-15.14.5** Leases bind sessions only
+  - files: `internal/lease/lease.go`, `internal/gate/gate.go`, `internal/guard/git.go`, `internal/lease/lease_test.go`, `internal/gate/gate_test.go`
+  - accept: a person's push to a leased branch drops the lease and goes through; a session's push to another holder's lease is refused naming the group and lapse time; decision 0012's amendment states it
+  - done_when: `go test ./internal/lease/... ./internal/gate/... ./internal/guard/...`
   - priority: H

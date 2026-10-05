@@ -1,0 +1,5 @@
+- [ ] **TSK-15.19.1** The REQ-3 canary always runs
+  - files: `internal/eval/cases.go`, `internal/eval/cases_test.go`
+  - accept: the canary case plants its own instruction, allow rule and MCP server in a throwaway home, starts a line session against it, and fails if any of the three appears in the session's effective config or output; it never reports skipped
+  - done_when: `go test ./internal/eval/...`
+  - priority: H
