@@ -119,10 +119,10 @@ func Taggable(text string, tags []string) []string {
 	return out
 }
 
-// Names reports whether the changelog holds a heading for exactly version.
+// Names reports whether the changelog holds a released heading, not one marked Unreleased, for exactly version.
 func Names(text, version string) bool {
-	for _, named := range Versions(text) {
-		if named.Number == version {
+	for _, match := range changelog.Heading.FindAllStringSubmatch(text, -1) {
+		if match[1] == version && !changelog.InProgress(match[0]) {
 			return true
 		}
 	}

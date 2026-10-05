@@ -32,6 +32,9 @@ func TestNamesMatchesOnlyAWholeHeadingVersion(t *testing.T) {
 	if !Names(twoVersions, "1.3.0") || Names(twoVersions, "1.3") || Names(twoVersions, "3.0.0") {
 		t.Fatal("Names must match exactly the versions the headings carry")
 	}
+	if Names("## Unreleased — 3.0.0\n\n- next\n", "3.0.0") {
+		t.Fatal("an Unreleased heading must not name its version as released")
+	}
 }
 
 func TestShippedVersionsSkipsAGroupWithAnOpenTask(t *testing.T) {

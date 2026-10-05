@@ -2278,6 +2278,34 @@ func TestAFailedReadyCallLeavesTheDraftWithAWarning(t *testing.T) {
 	}
 }
 
+func TestShippingAnEpicBranchGoesThroughTheEpicReadyGate(t *testing.T) {
+	root, group := shipRepo(t)
+	// The plan's version names its branch, so the pull request is the epic's own.
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Version: "a-group", Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	readied := false
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case args[0] == "label":
+			return `[{"name":"@agent"},{"name":"scope/harness"}]`, nil
+		case args[0] == "pr" && args[1] == "ready":
+			readied = true
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, []*WaveResult{{OK: true}}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readied || result.Ready || !slices.ContainsFunc(result.Warnings, func(w string) bool {
+		return strings.Contains(w, "could not mark the PR ready for review: ")
+	}) {
+		t.Fatalf("result = %+v, readied = %v; an epic branch with no changelog heading must stay a draft", result, readied)
+	}
+}
+
 func TestMarkReadyDropsStatusWipFromANormalPullRequest(t *testing.T) {
 	cases := []struct {
 		name   string
