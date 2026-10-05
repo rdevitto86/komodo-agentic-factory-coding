@@ -13,14 +13,51 @@ import (
 	"komodo/internal/mount"
 )
 
+// withLineSettings writes a minimal, valid line settings file under root, so a sandboxed platform's
+// withSandbox merge has something real to read instead of refusing the session.
+func withLineSettings(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, Dir, LineSettings)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"permissions":{"deny":["Edit(~/.claude/**)"]},"hooks":{"PreToolUse":[{"matcher":"*","hooks":[` +
+		`{"type":"command","command":"komodo guard"}]}]}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// sandboxedSessionRoot is a fresh repo root already carrying a rendered line settings file.
+func sandboxedSessionRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	withLineSettings(t, root)
+	return root
+}
+
+// argAfter returns the argument following flag, or empty when flag is absent.
+func argAfter(argv []string, flag string) string {
+	for i, arg := range argv {
+		if arg == flag && i+1 < len(argv) {
+			return argv[i+1]
+		}
+	}
+	return ""
+}
+
 func TestSessionArgvForBuilder(t *testing.T) {
+	root := sandboxedSessionRoot(t)
 	req := mount.StartRequest{
 		Role:   "builder",
 		Brief:  "test brief",
 		Tools:  []string{"read", "edit", "write", "shell", "search"},
 		Schema: []byte(`{"type":"object"}`),
 	}
-	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt, err := Session(root, "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if prompt != "test brief" {
@@ -30,8 +67,7 @@ func TestSessionArgvForBuilder(t *testing.T) {
 	checks := []string{
 		"-p",
 		"--setting-sources local",
-		"--plugin-dir /repo/.claude/plugins/builder",
-		"--settings ",
+		"--plugin-dir " + filepath.Join(root, Dir, "plugins", "builder"),
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
 		"--allowedTools Read, Edit, Write, Bash(ls:*), ",
 		"Bash(git diff:*)",
@@ -55,6 +91,17 @@ func TestSessionArgvForBuilder(t *testing.T) {
 	if strings.Contains(joined, "--max-budget-usd") {
 		t.Fatal("argv should not contain --max-budget-usd when maxBudgetUSD is 0")
 	}
+
+	settingsValue := argAfter(argv, "--settings")
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(settingsValue), &settings); err != nil {
+		t.Fatalf("--settings value is not JSON: %s", settingsValue)
+	}
+	for _, key := range []string{"hooks", "permissions"} {
+		if _, ok := settings[key]; !ok {
+			t.Errorf("--settings value is missing %q: %s", key, settingsValue)
+		}
+	}
 }
 
 func TestSessionArgvForLens(t *testing.T) {
@@ -64,7 +111,10 @@ func TestSessionArgvForLens(t *testing.T) {
 		Tools:  []string{"read", "search"},
 		Schema: []byte(`{"type":"object"}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "haiku", "standard", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--tools Read, Grep, Glob") {
@@ -77,7 +127,10 @@ func TestSessionArgvForLens(t *testing.T) {
 
 func TestSessionOmitsAnUnsetEffort(t *testing.T) {
 	req := mount.StartRequest{Role: "reviewer", Brief: "review", Tools: []string{"read"}, Schema: []byte(`{"type":"object"}`)}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "opus", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, arg := range argv {
 		if arg == "--effort" {
 			t.Fatalf("argv = %v; an unset effort must leave the flag out", argv)
@@ -92,7 +145,10 @@ func TestSessionStartSendsTheBriefAsThePrompt(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if prompt != "fix the parser bug" {
@@ -110,7 +166,10 @@ func TestSessionPromptStartingWithDashStaysOffArgv(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if prompt != "- fix X" {
 		t.Errorf("prompt = %q, want the brief unchanged", prompt)
@@ -129,7 +188,12 @@ func TestSessionResume(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, prompt := Session("/repo", "/worktree", req, "session-123", "fix the failing test", "sonnet", "extended", 10, 0)
+	argv, _, prompt, err := Session(
+		sandboxedSessionRoot(t), "/worktree", req, "session-123", "fix the failing test", "sonnet", "extended", 10, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--resume session-123") {
@@ -150,7 +214,10 @@ func TestSessionMaxBudgetUSD(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 5.25)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 5.25)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--max-budget-usd 5.25") {
@@ -162,10 +229,14 @@ func TestSessionEnvRemovesCLAUDEConfigDir(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "/home/user/.claude")
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
@@ -184,10 +255,14 @@ func TestSetEnvReplacesAnEmptyValue(t *testing.T) {
 func TestSessionEnvSetsGoCache(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
@@ -203,10 +278,14 @@ func TestSessionEnvSetsGoCache(t *testing.T) {
 func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOTMPDIR=") {
@@ -222,10 +301,14 @@ func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 func TestSessionEnvSetsGopath(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPATH=") {
@@ -241,10 +324,14 @@ func TestSessionEnvSetsGopath(t *testing.T) {
 func TestSessionEnvSetsGomodcache(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOMODCACHE=") {
@@ -260,10 +347,14 @@ func TestSessionEnvSetsGomodcache(t *testing.T) {
 func TestSessionEnvSetsGoproxy(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPROXY=") {
@@ -279,10 +370,14 @@ func TestSessionEnvSetsGoproxy(t *testing.T) {
 func TestSessionEnvSetsGoflags(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOFLAGS=") {
@@ -298,10 +393,14 @@ func TestSessionEnvSetsGoflags(t *testing.T) {
 func TestSessionEnvSetsClaudeCodeStopHookBlockCap(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=") {
@@ -317,10 +416,14 @@ func TestSessionEnvSetsClaudeCodeStopHookBlockCap(t *testing.T) {
 func TestSessionEnvSetsMaxTurnsForBuilder(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 40, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 40, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_MAX_TURNS=") {
@@ -336,10 +439,14 @@ func TestSessionEnvSetsMaxTurnsForBuilder(t *testing.T) {
 func TestSessionEnvSetsMaxTurnsForLens(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "lens",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 8, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "haiku", "standard", 8, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_MAX_TURNS=") {
@@ -355,10 +462,14 @@ func TestSessionEnvSetsMaxTurnsForLens(t *testing.T) {
 func TestSessionEnvSetsDisableAutoupdater(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "DISABLE_AUTOUPDATER=") {
@@ -375,10 +486,14 @@ func TestSessionSchemaInArgv(t *testing.T) {
 	schema := []byte(`{"type":"object","properties":{"result":{"type":"string"}}}`)
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: schema,
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	found := false
 	for i, arg := range argv {
@@ -396,10 +511,14 @@ func TestSessionSchemaInArgv(t *testing.T) {
 func TestSessionNoToolsGivesEmptyToolsList(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if strings.Contains(joined, "--tools") {
@@ -411,10 +530,14 @@ func TestSessionPreservesOtherEnvVars(t *testing.T) {
 	t.Setenv("MY_VAR", "test_value")
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	found := false
 	for _, entry := range env {
@@ -431,16 +554,20 @@ func TestSessionPreservesOtherEnvVars(t *testing.T) {
 func TestSessionArgvOrder(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(argv) < 1 || argv[0] != "-p" {
 		t.Fatalf("argv doesn't start with -p: %v", argv)
 	}
-	if prompt != "/" {
-		t.Fatalf("prompt = %q, want the default /", prompt)
+	if prompt != "b" {
+		t.Fatalf("prompt = %q, want the brief", prompt)
 	}
 
 	settingsIdx := -1
@@ -455,33 +582,70 @@ func TestSessionArgvOrder(t *testing.T) {
 	}
 }
 
+func TestSessionRefusesAnEmptyBrief(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err == nil {
+		t.Fatal("an empty brief must refuse to start a session rather than send \"/\"")
+	}
+}
+
+func TestSessionRefusesAnEmptyResumeInput(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Brief: "test brief", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "session-123", "", "sonnet", "extended", 10, 0)
+	if err == nil {
+		t.Fatal("an empty resume input must refuse to start a session rather than send \"/\"")
+	}
+}
+
 func TestSessionPluginDirPath(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "architect",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo/root", "/worktree", req, "", "", "opus", "extended", 10, 0)
+	root := sandboxedSessionRoot(t)
+	argv, _, _, err := Session(root, "/worktree", req, "", "", "opus", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
-	expected := "--plugin-dir /repo/root/.claude/plugins/architect"
+	expected := "--plugin-dir " + filepath.Join(root, Dir, "plugins", "architect")
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct plugin dir: %s\nfull: %s", expected, joined)
 	}
 }
 
+// fixedSandboxMerge is withSandbox's merged value for the fixture, with HOME fixed for a stable credential path.
+const fixedSandboxMerge = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"komodo guard"}]}]},` +
+	`"permissions":{"deny":["Edit(~/.claude/**)"]},"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,` +
+	`"failIfUnavailable":true,"filesystem":{"denyRead":["/home/komodo-fixed-test/.git-credentials",` +
+	`"/home/komodo-fixed-test/.config/git/credentials","/home/komodo-fixed-test/.config/gh"]},` +
+	`"network":{"allowedDomains":[]}}}`
+
 func TestSessionSettingsPath(t *testing.T) {
+	t.Setenv("HOME", "/home/komodo-fixed-test")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GH_CONFIG_DIR", "")
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/my/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	root := sandboxedSessionRoot(t)
+	argv, _, _, err := Session(root, "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
-	expected := "--settings /my/repo/.claude/settings.json"
-	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
-		expected = "--settings " + withSandbox("/my/repo/.claude/settings.json", sandbox)
+	settingsPath := filepath.Join(root, Dir, LineSettings)
+	expected := "--settings " + settingsPath
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		expected = "--settings " + fixedSandboxMerge
 	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)
@@ -496,10 +660,13 @@ func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := `{"hooks":{"PreToolUse":[{"matcher":"Bash"}]},"permissions":{"deny":["Edit(~/.claude/**)"]}}`
-	if err := os.WriteFile(filepath.Join(root, Dir, "settings.json"), []byte(rendered), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, Dir, LineSettings), []byte(rendered), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	merged := withSandbox(filepath.Join(root, Dir, "settings.json"), sandbox)
+	merged, err := withSandbox(filepath.Join(root, Dir, LineSettings), sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var settings map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(merged), &settings); err != nil {
 		t.Fatalf("settings %q: %v", merged, err)
@@ -514,13 +681,52 @@ func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
 	}
 }
 
+func TestWithSandboxRefusesAMissingSettingsFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, Dir, LineSettings)
+	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	if _, err := withSandbox(path, sandbox); err == nil {
+		t.Fatal("a missing settings file must refuse, not drop its hooks and denies")
+	}
+}
+
+func TestWithSandboxRefusesMalformedSettings(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, Dir, LineSettings)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	if _, err := withSandbox(path, sandbox); err == nil {
+		t.Fatal("malformed settings must refuse, not drop its hooks and denies")
+	}
+}
+
+func TestSessionRefusesToLaunchWhenTheLineSettingsFileIsMissing(t *testing.T) {
+	if lineSandbox(mount.LoadOverlay(), runtime.GOOS) == "" {
+		t.Skip("this platform has no sandbox to merge")
+	}
+	req := mount.StartRequest{Role: "builder", Brief: "b", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, _, _, err := Session(t.TempDir(), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err == nil {
+		t.Fatal("a missing line settings file must refuse to launch, not drop the role's hooks and denies")
+	}
+}
+
 func TestSessionMultipleTools(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{"read", "shell", "search"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var toolsStr string
 	for i, arg := range argv {
@@ -547,10 +753,14 @@ func TestSessionEffortValue(t *testing.T) {
 	for _, effort := range cases {
 		req := mount.StartRequest{
 			Role:   "builder",
+			Brief:  "b",
 			Tools:  []string{},
 			Schema: []byte(`{}`),
 		}
-		argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", effort, 10, 0)
+		argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", effort, 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		joined := strings.Join(argv, " ")
 
 		expected := "--effort " + effort
@@ -565,10 +775,14 @@ func TestSessionModelValue(t *testing.T) {
 	for _, model := range models {
 		req := mount.StartRequest{
 			Role:   "builder",
+			Brief:  "b",
 			Tools:  []string{},
 			Schema: []byte(`{}`),
 		}
-		argv, _, _ := Session("/repo", "/worktree", req, "", "", model, "extended", 10, 0)
+		argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", model, "extended", 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		joined := strings.Join(argv, " ")
 
 		expected := "--model " + model
@@ -581,10 +795,14 @@ func TestSessionModelValue(t *testing.T) {
 func TestSessionEnvWithWorktreeSlashes(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/work/tree/path", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/work/tree/path", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
@@ -611,10 +829,14 @@ func TestSessionSchemaValidJSON(t *testing.T) {
 
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: schemaBytes,
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var foundSchema bool
 	for i, arg := range argv {
@@ -633,10 +855,14 @@ func TestSessionSchemaValidJSON(t *testing.T) {
 func TestSessionMaxBudgetPrecision(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 10.99)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 10.99)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--max-budget-usd 10.99") {
@@ -647,10 +873,14 @@ func TestSessionMaxBudgetPrecision(t *testing.T) {
 func TestSessionEmptyResume(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if strings.Contains(joined, "--resume") {
@@ -661,10 +891,14 @@ func TestSessionEmptyResume(t *testing.T) {
 func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{"read", "edit", "write", "shell", "search"},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var toolsStr string
 	for i, arg := range argv {
@@ -684,14 +918,24 @@ func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 
 func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	argv, _, _ := Session("/repo", "/worktree", mount.StartRequest{Role: "builder"}, "", "", "sonnet", "", 10, 0)
-	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
-	carried := false
-	for i, arg := range argv[:len(argv)-1] {
-		carried = carried || (arg == "--settings" && argv[i+1] == withSandbox("/repo/.claude/settings.json", want))
+	root := sandboxedSessionRoot(t)
+	argv, _, _, err := Session(root, "/worktree", mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "sonnet", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if want != "" && !carried {
-		t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)
+	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
+	if want != "" {
+		merged, err := withSandbox(filepath.Join(root, Dir, LineSettings), want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		carried := false
+		for i, arg := range argv[:len(argv)-1] {
+			carried = carried || (arg == "--settings" && argv[i+1] == merged)
+		}
+		if !carried {
+			t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)
+		}
 	}
 	if strings.Count(strings.Join(argv, " "), "--settings") != 1 {
 		t.Fatalf("argv = %v; exactly one --settings is passed, since the host keeps only the last", argv)
@@ -703,7 +947,12 @@ func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
 
 func TestSessionTempRootSitsOutsideTheWorktree(t *testing.T) {
 	worktree := t.TempDir()
-	_, env, _ := Session("/repo", worktree, mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "m", "", 10, 0)
+	_, env, _, err := Session(
+		sandboxedSessionRoot(t), worktree, mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "m", "", 10, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var tmp string
 	for _, entry := range env {
 		if value, ok := strings.CutPrefix(entry, "CLAUDE_CODE_TMPDIR="); ok {
@@ -722,8 +971,11 @@ func TestSessionTempRootSitsOutsideTheWorktree(t *testing.T) {
 }
 
 func TestSessionEnvNamesTheLineRoleForTheGuard(t *testing.T) {
-	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read"}, Schema: []byte(`{}`)}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	req := mount.StartRequest{Role: "reviewer", Brief: "b", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "opus", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	found := false
 	for _, entry := range env {
 		found = found || entry == guard.RoleEnv+"=reviewer"
@@ -734,8 +986,11 @@ func TestSessionEnvNamesTheLineRoleForTheGuard(t *testing.T) {
 }
 
 func TestSessionDeniesTheLinePathsEvenWithNoTools(t *testing.T) {
-	req := mount.StartRequest{Role: "builder", Schema: []byte(`{}`)}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "", 10, 0)
+	req := mount.StartRequest{Role: "builder", Brief: "b", Schema: []byte(`{}`)}
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 	for _, want := range []string{"Edit(//worktree/docs/prd.md)", "Edit(//worktree/eval/**)", "Edit(//worktree/komodo/policy.json)"} {
 		if !strings.Contains(joined, "--disallowedTools ") || !strings.Contains(joined, want) {

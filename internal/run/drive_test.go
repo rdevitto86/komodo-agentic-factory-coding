@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
@@ -33,6 +34,9 @@ n=0
 if [ -f "$FAKE_COUNTER" ]; then n=$(cat "$FAKE_COUNTER"); fi
 n=$((n+1))
 echo "$n" > "$FAKE_COUNTER"
+if [ "$n" = "1" ] && [ -n "$FAKE_LAND_BRANCH" ]; then
+  git -C "$FAKE_LAND_REPO" push --quiet origin "$FAKE_LAND_BRANCH":main
+fi
 if [ "$n" = "1" ]; then
   echo "built" > change.txt
   cat "$FAKE_BUILD_FIXTURE"
@@ -75,6 +79,9 @@ func driveRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, claude.Dir, "settings.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, claude.Dir, claude.LineSettings), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 
@@ -100,6 +107,54 @@ func setupDriveFakeClaude(t *testing.T) {
 	t.Setenv("FAKE_COUNTER", filepath.Join(fixtures, "counter"))
 	t.Setenv("FAKE_BUILD_FIXTURE", build)
 	t.Setenv("FAKE_REVIEW_FIXTURE", review)
+}
+
+// escalateOnTimeoutClaude hangs a builder, then answers its escalation session by its plugin-dir argument.
+const escalateOnTimeoutClaude = `#!/bin/sh
+case "$*" in
+  *"/plugins/escalation"*) cat "$FAKE_ESCALATE_FIXTURE"; exit 0 ;;
+esac
+sleep "$FAKE_HANG_SLEEP"
+`
+
+// escalateFixture is the orchestrator's one settled action: stop the group for a person.
+const escalateFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"escalate-1","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"action":"stop","needs":"a person's call"}}` + "\n"
+
+// TestAGroupPastItsBudgetSavesAndEscalatesInsteadOfOnlyDying hangs a builder under a short budget,
+// and proves the conductor saves it as a settled escalation, never only the budget's own error.
+func TestAGroupPastItsBudgetSavesAndEscalatesInsteadOfOnlyDying(t *testing.T) {
+	root := driveRepo(t)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(escalateOnTimeoutClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(t.TempDir(), "escalate.jsonl")
+	if err := os.WriteFile(fixture, []byte(escalateFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_ESCALATE_FIXTURE", fixture)
+	t.Setenv("FAKE_HANG_SLEEP", fmt.Sprintf("61.%d", os.Getpid()))
+	client := &pr.Client{Run: func(string, ...string) (string, error) { return "[]", nil }}
+
+	code, err := Drive(Options{Root: root, Target: "TG-40.1", Budget: 50 * time.Millisecond, PR: client})
+	if code != 1 || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drive = %d, %v; want the spent budget once the escalation settles", code, err)
+	}
+
+	state, err := conductor.LoadState(conductor.StatePath(root, "TG-40.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != conductor.Escalated || !state.Answered || !state.Stop {
+		t.Fatalf("state = %+v, want an answered, stopped escalation saved", state)
+	}
+	if !strings.Contains(state.Reason, "ran out of its budget") {
+		t.Fatalf("reason = %q, want it naming the spent budget", state.Reason)
+	}
 }
 
 // TestRunDrivesAGroupEndToEnd checks a group reaches Shipped, pushes its branch, and stamps one
@@ -235,6 +290,44 @@ func TestRunClearsAMergedGroupsWorktreeBeforeItCuts(t *testing.T) {
 	}
 }
 
+// TestRunClearsALeftoverThatLandsOnlyAfterTheCut checks a worktree landed into main mid-run is gone.
+// The prune after Ship removes it, proving it is not only the one before the cut.
+func TestRunClearsALeftoverThatLandsOnlyAfterTheCut(t *testing.T) {
+	root := driveRepo(t)
+	setupDriveFakeClaude(t)
+	stale := filepath.Join(root, line.StateDir, "wt", "TG-39.1")
+	runGit(t, root, "worktree", "add", "-b", "feat/old", stale, "main")
+	if err := os.WriteFile(filepath.Join(stale, "old.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, stale, "add", "old.txt")
+	runGit(t, stale, "commit", "-m", "old")
+	runGit(t, stale, "push", "origin", "feat/old")
+	// feat/old is pushed but unmerged, so only the fake builder landing it mid-run triggers the post-Ship prune.
+	t.Setenv("FAKE_LAND_BRANCH", "feat/old")
+	t.Setenv("FAKE_LAND_REPO", stale)
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		if len(args) > 0 && args[0] == "label" {
+			return "[]", nil
+		}
+		return "", nil
+	}}
+
+	var out strings.Builder
+	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client, Stdout: &out}); err != nil || code != 0 {
+		t.Fatalf("Drive = %d, %v", code, err)
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatalf("a worktree that landed during the run survived; out = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "removed worktree") {
+		t.Fatalf("out = %q; the prune after Ship must print what it removed", out.String())
+	}
+}
+
 // TestRunRefusesToCutWhereLeftoversCannotBeListed checks a cut stops when the root is no git repo to prune.
 func TestRunRefusesToCutWhereLeftoversCannotBeListed(t *testing.T) {
 	root := t.TempDir()
@@ -355,20 +448,20 @@ type lensHost struct {
 	starts []mount.StartRequest
 }
 
-func (h *lensHost) Preflight() error { return nil }
+func (h *lensHost) Preflight(context.Context) error { return nil }
 
-func (h *lensHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (h *lensHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.starts = append(h.starts, req)
 	return mount.Handle(fmt.Sprintf("session-%d", len(h.starts))), nil
 }
 
-func (h *lensHost) Resume(mount.Handle, string) (mount.Handle, error) {
+func (h *lensHost) Resume(context.Context, mount.Handle, string) (mount.Handle, error) {
 	return "", errors.New("no session resumes here")
 }
 
-func (h *lensHost) Stream(mount.Handle) (<-chan mount.Event, error) {
+func (h *lensHost) Stream(context.Context, mount.Handle) (<-chan mount.Event, error) {
 	out := make(chan mount.Event)
 	close(out)
 	return out, nil
@@ -378,7 +471,7 @@ func (h *lensHost) Result(mount.Handle) (mount.Result, error) {
 	return mount.Result{Value: map[string]any{"findings": []any{}}}, nil
 }
 
-func (h *lensHost) Stop(mount.Handle) error { return nil }
+func (h *lensHost) Stop(context.Context, mount.Handle) error { return nil }
 
 func (h *lensHost) Capabilities() mount.Capabilities { return mount.Capabilities{Structured: true} }
 
@@ -393,7 +486,7 @@ func (passingStations) Head() (string, error)                     { return "revi
 func (passingStations) Diff(string) (string, error)               { return "", nil }
 func (passingStations) Merge() (bool, error)                      { return false, nil }
 
-// TestRunStartsOneReviewerSessionPerLens is REQ-19: the ledger shows three lens sessions in full mode
+// TestRunStartsOneReviewerSessionPerLens: the ledger shows three lens sessions in full mode
 // and one in economy mode, each bound to its lens's skill on the reviewer tier.
 func TestRunStartsOneReviewerSessionPerLens(t *testing.T) {
 	cases := []struct {

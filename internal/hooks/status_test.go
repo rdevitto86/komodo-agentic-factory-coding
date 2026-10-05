@@ -2,6 +2,8 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,52 @@ func TestRunStatusShowsEachGroupsStateTimeAndBlocker(t *testing.T) {
 		if !strings.Contains(text, line) {
 			t.Fatalf("status text holds no %q:\n%s", line, text)
 		}
+	}
+}
+
+func TestRunStatusCountsALiveStagesTimeSoFar(t *testing.T) {
+	t.Parallel()
+	root := statusRoot(t)
+	blocked := conductor.State{Group: "TG-1.2", Current: conductor.Blocked, TimeUsed: 5 * time.Minute}
+	if err := conductor.SaveState(conductor.StatePath(root, "TG-1.2"), blocked); err != nil {
+		t.Fatal(err)
+	}
+	// The test runner's parent is a live process other than this one, so it holds the lock like a run.
+	lock, err := json.Marshal(line.RunLock{PID: os.Getppid(), Run: "TG-1.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{"TG-1.1", "TG-1.2"} {
+		if err := os.WriteFile(line.LockPath(root, group), lock, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		entered := time.Now().Add(-2 * time.Minute)
+		if err := os.Chtimes(conductor.StatePath(root, group), entered, entered); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := RunStatus(root)
+	if used := got[0].TimeUsed; used < 3*time.Minute+30*time.Second || used > 4*time.Minute {
+		t.Fatalf("live Building group used %s, want its 1m30s plus about 2m in the current stage", used)
+	}
+	if used := got[1].TimeUsed; used != 5*time.Minute {
+		t.Fatalf("blocked group used %s, want its saved 5m0s; a settled group adds no live time", used)
+	}
+}
+
+// TestGroupStatusJSONNamesTimeUsedInSeconds proves status --json never serialises TimeUsed as
+// raw nanoseconds under a key that names no unit: time_used_seconds carries whole seconds.
+func TestGroupStatusJSONNamesTimeUsedInSeconds(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(GroupStatus{Group: "TG-1", State: "Building", TimeUsed: 90 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"time_used_seconds":90`) {
+		t.Fatalf("json = %s, want time_used_seconds in whole seconds", data)
+	}
+	if strings.Contains(string(data), `"time_used"`) {
+		t.Fatalf("json = %s, must not carry the old unitless key", data)
 	}
 }
 

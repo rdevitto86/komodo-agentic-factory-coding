@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,26 +16,26 @@ var noVerifyCommands = map[string]bool{
 
 // gitFindings checks one git call against the guard's rules: a critical ref is never committed,
 // pushed, merged, or moved by hand; pushed history and hooks hold; a branch is never pinned.
-func gitFindings(words []string, dir, branch string, policy Policy) []string {
+func gitFindings(words []string, dir, branch string, policy Policy) []finding {
 	args := skipGlobalFlags(words[1:])
 	if len(args) == 0 {
 		return nil
 	}
 	sub, rest := args[0], args[1:]
-	var findings []string
+	var findings []finding
 	if noVerifyCommands[sub] && normalizeMode(policy.Mode) != ModeUnsafe && hasNoVerify(sub, rest) {
-		findings = append(findings, fmt.Sprintf("git %s --no-verify skips the gate; fix what it reports instead", sub))
+		findings = append(findings, newFinding("git %s --no-verify skips the gate; fix what it reports instead", sub))
 	}
 	switch sub {
 	case "push":
 		findings = append(findings, pushFindings(rest, dir, branch, policy)...)
 	case "commit":
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
-			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
+			findings = append(findings, newFinding("git commit on %s: create a branch first", branch))
 		}
 	case "merge":
 		if (policy.IsCritical(branch) || lineEpicBranch(branch)) && normalizeMode(policy.Mode) != ModeUnsafe {
-			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
+			findings = append(findings, newFinding("git merge on %s: landing is the human's merge button", branch))
 		}
 	case "branch":
 		findings = append(findings, branchFindings(rest, policy)...)
@@ -57,13 +56,13 @@ const worktreeAttach = "name komodo worktree add or git switch --detach"
 
 // worktreeFindings refuses a git worktree add that attaches a branch instead of detaching one, and
 // a -B that would force-move a critical ref.
-func worktreeFindings(rest []string, policy Policy) []string {
+func worktreeFindings(rest []string, policy Policy) []finding {
 	if len(rest) == 0 || rest[0] != "add" {
 		return nil
 	}
 	args := rest[1:]
 	if target, ok := flagValue(args, "-B"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
-		return []string{fmt.Sprintf("git worktree add -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach)}
+		return []finding{newFinding("git worktree add -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach)}
 	}
 	detached, attach := false, false
 	for _, arg := range args {
@@ -76,41 +75,41 @@ func worktreeFindings(rest []string, policy Policy) []string {
 	}
 	switch {
 	case attach:
-		return []string{"git worktree add -b/-B attaches a branch; " + worktreeAttach}
+		return []finding{newFinding("git worktree add -b/-B attaches a branch; " + worktreeAttach)}
 	case !detached:
-		return []string{"git worktree add without --detach attaches a branch; " + worktreeAttach}
+		return []finding{newFinding("git worktree add without --detach attaches a branch; " + worktreeAttach)}
 	}
 	return nil
 }
 
 // checkoutFindings refuses checkout -B onto a critical ref, and, in a linked worktree, a plain
 // checkout onto a branch git already has or would create tracking a same-named remote branch.
-func checkoutFindings(rest []string, dir string, policy Policy) []string {
-	var findings []string
+func checkoutFindings(rest []string, dir string, policy Policy) []finding {
+	var findings []finding
 	if target, ok := flagValue(rest, "-B"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
-		findings = append(findings, fmt.Sprintf("git checkout -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
+		findings = append(findings, newFinding("git checkout -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
 	}
 	if target := plainCheckoutTarget(rest); target != "" && isLinkedWorktree(dir) && attachesBranch(dir, target) {
-		findings = append(findings, fmt.Sprintf("git checkout %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
+		findings = append(findings, newFinding("git checkout %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
 	}
 	return findings
 }
 
 // switchFindings refuses switch -C onto a critical ref, and, in a linked worktree, a plain switch
 // onto a branch git already has or would create tracking a same-named remote branch.
-func switchFindings(rest []string, dir string, policy Policy) []string {
-	var findings []string
+func switchFindings(rest []string, dir string, policy Policy) []finding {
+	var findings []finding
 	if target, ok := flagValue(rest, "-C"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
-		findings = append(findings, fmt.Sprintf("git switch -C %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
+		findings = append(findings, newFinding("git switch -C %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
 	}
 	if target := plainSwitchTarget(rest); target != "" && isLinkedWorktree(dir) && attachesBranch(dir, target) {
-		findings = append(findings, fmt.Sprintf("git switch %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
+		findings = append(findings, newFinding("git switch %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
 	}
 	return findings
 }
 
 // updateRefFindings refuses a git update-ref that moves a critical ref by hand.
-func updateRefFindings(rest []string, dir string, policy Policy) []string {
+func updateRefFindings(rest []string, dir string, policy Policy) []finding {
 	if normalizeMode(policy.Mode) == ModeUnsafe {
 		return nil
 	}
@@ -120,7 +119,7 @@ func updateRefFindings(rest []string, dir string, policy Policy) []string {
 		}
 		ref := strings.TrimPrefix(arg, "refs/heads/")
 		if policy.IsCritical(ref) {
-			return []string{fmt.Sprintf("git update-ref %s: a critical ref is never moved by hand; %s", arg, worktreeAttach)}
+			return []finding{newFinding("git update-ref %s: a critical ref is never moved by hand; %s", arg, worktreeAttach)}
 		}
 		if tip, ok := strings.CutPrefix(arg, "refs/komodo/"); ok {
 			return leaseFindings(dir, tip, "git update-ref "+arg)
@@ -131,7 +130,7 @@ func updateRefFindings(rest []string, dir string, policy Policy) []string {
 }
 
 // leaseFindings refuses an orchestrator session's write to a branch a live builder holds, unless it is that builder's own run.
-func leaseFindings(dir, branch, what string) []string {
+func leaseFindings(dir, branch, what string) []finding {
 	if IsLineSession() {
 		return nil
 	}
@@ -139,7 +138,7 @@ func leaseFindings(dir, branch, what string) []string {
 	if !ok || held.Own() {
 		return nil
 	}
-	return []string{fmt.Sprintf("%s: %s", what, held.Refusal())}
+	return []finding{newFinding("%s: %s", what, held.Refusal())}
 }
 
 // flagValue is the word after flag's first occurrence in args, or nothing when flag is absent or last.
@@ -209,32 +208,48 @@ func skipGlobalFlags(args []string) []string {
 	return args[index:]
 }
 
-// hasNoVerify reports whether rest skips hooks: --no-verify, or commit's bare -n.
+// noVerifyValueFlags are git commit's short options whose value swallows a cluster's trailing n.
+var noVerifyValueFlags = map[rune]bool{'m': true, 'c': true, 'C': true, 'F': true}
+
+// hasNoVerify reports whether rest skips hooks: --no-verify or an unambiguous prefix of it, or,
+// for commit, a short cluster carrying -n ahead of any flag that takes a value, such as -nm.
 func hasNoVerify(sub string, rest []string) bool {
 	for _, arg := range rest {
-		if arg == "--no-verify" {
+		if strings.HasPrefix(arg, "--no-v") && strings.HasPrefix("--no-verify", arg) {
 			return true
 		}
-		if sub == "commit" && arg == "-n" {
-			return true
+		if sub != "commit" || !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+			continue
+		}
+		for _, char := range arg[1:] {
+			if char == 'n' {
+				return true
+			}
+			if noVerifyValueFlags[char] {
+				break
+			}
 		}
 	}
 	return false
 }
 
-// isForceFlag reports whether a push option rewrites the remote's history.
+// isForceFlag reports whether a push option rewrites the remote's history: the long spellings, or
+// any short-option cluster that packs in -f, such as -fu.
 func isForceFlag(arg string) bool {
-	return arg == "-f" || arg == "--force" || arg == "--force-if-includes" || strings.HasPrefix(arg, "--force-with-lease")
+	if arg == "--force" || arg == "--force-if-includes" || strings.HasPrefix(arg, "--force-with-lease") {
+		return true
+	}
+	return strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.ContainsRune(arg, 'f')
 }
 
 // pushFindings refuses a push that rewrites history or lands on a critical ref.
-func pushFindings(rest []string, dir, branch string, policy Policy) []string {
-	var findings []string
+func pushFindings(rest []string, dir, branch string, policy Policy) []finding {
+	var findings []finding
 	var positional []string
 	deletes := false
 	for _, arg := range rest {
 		if isForceFlag(arg) {
-			findings = append(findings, fmt.Sprintf("git push %s: pushed history is never rewritten; push a new commit instead", arg))
+			findings = append(findings, newFinding("git push %s: pushed history is never rewritten; push a new commit instead", arg))
 		}
 		switch {
 		case arg == "--delete" || arg == "-d":
@@ -243,26 +258,38 @@ func pushFindings(rest []string, dir, branch string, policy Policy) []string {
 			positional = append(positional, strings.TrimPrefix(arg, "+"))
 		}
 	}
-	if normalizeMode(policy.Mode) == ModeUnsafe {
-		return findings
-	}
 	targets := []string{branch}
 	if len(positional) > 1 {
 		targets = positional[1:]
 	}
-	for _, target := range targets {
+	for index, target := range targets {
 		if _, after, found := strings.Cut(target, ":"); found {
 			target = after
 		}
 		if target == "HEAD" {
 			target = branch
 		}
-		if policy.IsCritical(target) || lineEpicBranch(target) {
-			verb := "push to"
-			if deletes {
-				verb = "delete"
-			}
-			findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
+		targets[index] = target
+	}
+	// A critical-ref delete and an epic-branch push or delete are refused in every mode, unsafe included.
+	verb := "push to"
+	if deletes {
+		verb = "delete"
+	}
+	for _, target := range targets {
+		switch {
+		case deletes && policy.IsCritical(target):
+			findings = append(findings, newFinding("git delete %s: open a pull request instead", target))
+		case lineEpicBranch(target):
+			findings = append(findings, newFinding("git %s %s: open a pull request instead", verb, target))
+		}
+	}
+	if normalizeMode(policy.Mode) == ModeUnsafe {
+		return findings
+	}
+	for _, target := range targets {
+		if policy.IsCritical(target) && !deletes {
+			findings = append(findings, newFinding("git push to %s: open a pull request instead", target))
 		}
 		findings = append(findings, leaseFindings(dir, strings.TrimPrefix(target, "refs/heads/"), "git push to "+target)...)
 	}
@@ -270,29 +297,41 @@ func pushFindings(rest []string, dir, branch string, policy Policy) []string {
 }
 
 // branchFindings refuses a branch delete, force, or move that names a critical ref.
-func branchFindings(rest []string, policy Policy) []string {
+// Forcing and copying judge only the ref actually moved or created, never one merely read.
+func branchFindings(rest []string, policy Policy) []finding {
 	if normalizeMode(policy.Mode) == ModeUnsafe {
 		return nil
 	}
-	deleting, forcing, moving := false, false, false
+	deleting, forcing, moving, copying := false, false, false, false
+	var positional []string
 	for _, arg := range rest {
 		switch arg {
 		case "-d", "-D", "--delete":
 			deleting = true
 		case "-f", "--force":
 			forcing = true
-		case "-m", "-M", "--move", "-c", "-C", "--copy":
+		case "-m", "-M", "--move":
 			moving = true
+		case "-c", "-C", "--copy":
+			copying = true
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				positional = append(positional, arg)
+			}
 		}
 	}
-	if !deleting && !forcing && !moving {
+	if !deleting && !forcing && !moving && !copying {
 		return nil
 	}
-	var findings []string
-	for _, arg := range rest {
-		if strings.HasPrefix(arg, "-") {
-			continue
-		}
+	targets := positional
+	switch {
+	case !deleting && !moving && copying && len(positional) > 0:
+		targets = positional[len(positional)-1:]
+	case !deleting && !moving && !copying && forcing && len(positional) > 0:
+		targets = positional[:1]
+	}
+	var findings []finding
+	for _, arg := range targets {
 		if !policy.IsCritical(arg) {
 			continue
 		}
@@ -300,7 +339,7 @@ func branchFindings(rest []string, policy Policy) []string {
 		if deleting {
 			verb = "deleted"
 		}
-		findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never %s by hand", arg, verb))
+		findings = append(findings, newFinding("git branch %s: a critical ref is never %s by hand", arg, verb))
 	}
 	return findings
 }

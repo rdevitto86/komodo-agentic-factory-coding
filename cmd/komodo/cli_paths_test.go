@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"komodo/internal/recall"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -17,6 +17,21 @@ func TestACommandOutsideAGitRepoFails(t *testing.T) {
 	got := runCLI(t, t.TempDir(), "", "lint")
 	if got.code != 1 || !strings.Contains(got.stderr, "no git repository") {
 		t.Fatalf("exit %d, stderr %q; a command outside a repo names why it stopped", got.code, got.stderr)
+	}
+}
+
+// TestGlobalGuardAndHookExitZeroOutsideAGitRepo proves the global guard and status hooks, run in
+// every session by the user-level settings, do nothing instead of failing one started outside a repo.
+func TestGlobalGuardAndHookExitZeroOutsideAGitRepo(t *testing.T) {
+	outside := t.TempDir()
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":"` + filepath.ToSlash(outside) + `","tool_input":{"command":"echo hi"}}`
+	guard := runCLI(t, outside, payload, "guard")
+	if guard.code != 0 || guard.stdout != "" || guard.stderr != "" {
+		t.Fatalf("guard outside a repo = %+v, want a silent exit 0", guard)
+	}
+	status := runCLI(t, outside, `{"cwd":"`+filepath.ToSlash(outside)+`"}`, "hook", "status", "--host", "claude")
+	if status.code != 0 || status.stdout != "" || status.stderr != "" {
+		t.Fatalf("hook status outside a repo = %+v, want a silent exit 0", status)
 	}
 }
 
@@ -108,9 +123,12 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var sent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/chat" {
+			body, _ := io.ReadAll(r.Body)
+			sent = string(body)
 			_, _ = w.Write(chat)
 			return
 		}
@@ -118,7 +136,7 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	}))
 	defer server.Close()
 	t.Setenv("OLLAMA_BASE_URL", server.URL)
-	binary := filepath.Join(root, "bin", "komodo-"+runtime.GOOS+"-"+runtime.GOARCH)
+	binary := filepath.Join(root, "bin", "komodo")
 	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +156,10 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	got := runCLI(t, root, "", "machine", "TSK-90.2.1", "--role", "reviewer")
 	if got.code != 0 || !strings.Contains(got.stdout, "wrote") {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", got.code, got.stdout, got.stderr)
+	}
+	// The local model reads the compact rules ahead of the brief, since it loads no host config.
+	if rules, brief := strings.Index(sent, "Answer with a verdict"), strings.Index(sent, "Review this diff."); rules < 0 || brief < rules {
+		t.Fatalf("sent = %q; want the compact rules ahead of the brief", sent)
 	}
 	result, err := os.ReadFile(filepath.Join(root, ".komodo", "results", "TSK-90.2.1.json"))
 	if err != nil || !strings.Contains(string(result), `"blast_radius"`) {

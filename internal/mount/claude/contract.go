@@ -3,6 +3,7 @@ package claude
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -13,18 +14,46 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/proc"
 )
 
+// cliTimeout bounds how long a claude status command may run before it is killed; a test lowers it.
+var cliTimeout = 30 * time.Second
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
+
 // errNotLoggedIn reports that the CLI's auth status holds no login.
 var errNotLoggedIn = errors.New("claude is not logged in")
 
-// versionOutput runs this host's own --version report; a test swaps it.
+// versionOutput runs this host's own --version report, or an error naming the command and its stderr.
 var versionOutput = func() (string, error) {
-	out, err := exec.Command("claude", "--version").Output()
-	return strings.TrimSpace(string(out)), err
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "claude", "--version")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("claude --version: timed out after %s: %s", cliTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		return "", fmt.Errorf("claude --version: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // Mount runs Claude Code sessions and implements the host contract.
@@ -35,6 +64,8 @@ type Mount struct {
 
 	mu       sync.Mutex
 	sessions map[mount.Handle]*session
+	// running counts sessions holding the worktree's temp root; the last to end removes it.
+	running int
 }
 
 // session is one running or finished claude process, and what Result and Resume read once it ends.
@@ -43,11 +74,14 @@ type session struct {
 	buf    *bytes.Buffer
 	reader io.Reader
 	req    mount.StartRequest
+	// logs are the session's own stream and stderr files, closed once it ends.
+	logs []io.Closer
 	// watcher stops the session's process tree past proc.DefaultLimits and reaps what it leaves behind.
 	watcher *proc.Watcher
 
 	waitOnce sync.Once
 	waitErr  error
+	endOnce  sync.Once
 
 	done chan struct{}
 
@@ -64,6 +98,42 @@ func (s *session) wait() error {
 	return s.waitErr
 }
 
+// closeLogs closes every log file spawn opened; a failed close is not actionable once the
+// session has already produced its result.
+func (s *session) closeLogs() {
+	for _, closer := range s.logs {
+		_ = closer.Close()
+	}
+}
+
+// holdTmp makes the worktree's private temp root and counts one more session holding it.
+func (m *Mount) holdTmp() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
+		return fmt.Errorf("making the session's temp root: %w", err)
+	}
+	m.running++
+	return nil
+}
+
+// releaseTmp counts one session fewer, removing the temp root once none still holds it.
+func (m *Mount) releaseTmp() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.running--; m.running == 0 {
+		_ = os.RemoveAll(SessionTmp(m.worktree))
+	}
+}
+
+// ended closes a finished session's logs and releases its temp root, once however it ended.
+func (m *Mount) ended(sess *session) {
+	sess.endOnce.Do(func() {
+		sess.closeLogs()
+		m.releaseTmp()
+	})
+}
+
 // NewMount builds a Claude Code mount that starts every session in worktree, with root naming the
 // repo its plugins and settings render into, capped at maxTurns and, when positive, maxBudgetUSD.
 func NewMount(root, worktree string, maxTurns int, maxBudgetUSD float64) *Mount {
@@ -73,7 +143,7 @@ func NewMount(root, worktree string, maxTurns int, maxBudgetUSD float64) *Mount 
 }
 
 // Preflight checks that the installed CLI runs and holds a login, or names which one fails.
-func (m *Mount) Preflight() error {
+func (m *Mount) Preflight(ctx context.Context) error {
 	if _, err := versionOutput(); err != nil {
 		return fmt.Errorf("checking claude --version: %w", err)
 	}
@@ -89,20 +159,26 @@ func (m *Mount) Preflight() error {
 
 // Start runs a role headless with Session's argv and environment, in the worktree, in its own
 // process group, and returns the handle its session runs under: the host's own session ID.
-func (m *Mount) Start(req mount.StartRequest) (mount.Handle, error) {
-	argv, env, prompt := Session(m.root, m.worktree, req, "", "", req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
-	return m.spawn(argv, env, prompt, req)
+func (m *Mount) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
+	argv, env, prompt, err := Session(m.root, m.worktree, req, "", "", req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	if err != nil {
+		return "", err
+	}
+	return m.spawn(ctx, argv, env, prompt, req)
 }
 
 // Resume forks a finished session with new input under a fresh session ID; a handle from an earlier
 // process resumes from the request its spawn saved.
-func (m *Mount) Resume(handle mount.Handle, input string) (mount.Handle, error) {
+func (m *Mount) Resume(ctx context.Context, handle mount.Handle, input string) (mount.Handle, error) {
 	req, err := m.priorRequest(handle)
 	if err != nil {
 		return "", err
 	}
-	argv, env, prompt := Session(m.root, m.worktree, req, handle, input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
-	return m.spawn(append(argv, "--fork-session"), env, prompt, req)
+	argv, env, prompt, err := Session(m.root, m.worktree, req, handle, input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	if err != nil {
+		return "", err
+	}
+	return m.spawn(ctx, append(argv, "--fork-session"), env, prompt, req)
 }
 
 // priorRequest returns the request handle's session ran under, once that session has ended with a result.
@@ -140,8 +216,8 @@ func (m *Mount) requestPath(handle mount.Handle) string {
 	return filepath.Join(m.worktree, ".komodo", "sessions", string(handle)+".request.json")
 }
 
-// newSessionID returns a random version 4 UUID, the form the host's --session-id accepts.
-func newSessionID() (string, error) {
+// newSessionID returns a random version 4 UUID, the form the host's --session-id accepts; a test swaps it.
+var newSessionID = func() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
@@ -151,62 +227,76 @@ func newSessionID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// spawn starts claude with argv and env, its prompt on stdin, under a fresh session ID that is its handle.
-func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest) (mount.Handle, error) {
+// spawn starts claude with argv and env, its prompt on stdin, under a fresh session ID that is its handle;
+// a cancelled ctx kills a start that never returns.
+func (m *Mount) spawn(ctx context.Context, argv, env []string, prompt string, req mount.StartRequest) (mount.Handle, error) {
 	sessionID, err := newSessionID()
 	if err != nil {
 		return "", fmt.Errorf("making a session id: %w", err)
 	}
 	handle := mount.Handle(sessionID)
-	cmd := exec.Command("claude", append(argv, "--session-id", sessionID)...)
+	cmd := exec.CommandContext(ctx, "claude", append(argv, "--session-id", sessionID)...)
 	cmd.Dir = m.worktree
 	cmd.Env = env
 	cmd.Stdin = strings.NewReader(prompt)
 	proc.Group(cmd)
 	// The session's temp root must exist and be private before the host puts its TMPDIR there.
-	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
-		return "", fmt.Errorf("making the session's temp root: %w", err)
+	if err := m.holdTmp(); err != nil {
+		return "", err
 	}
+	started := false
+	defer func() {
+		if !started {
+			m.releaseTmp()
+		}
+	}()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("piping claude's stdout: %w", err)
 	}
-	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
 	logs := filepath.Join(m.worktree, ".komodo", "sessions")
-	var record io.Writer = io.Discard
-	if err := os.MkdirAll(logs, 0o755); err == nil {
-		if out, err := os.Create(filepath.Join(logs, string(handle)+".jsonl")); err == nil {
-			record = out
-		}
-		if errs, err := os.Create(filepath.Join(logs, string(handle)+".err")); err == nil {
-			cmd.Stderr = errs
-		}
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		return "", fmt.Errorf("making the session's log directory: %w", err)
 	}
 	saved, err := json.Marshal(req)
 	if err != nil {
 		return "", fmt.Errorf("saving the session's request: %w", err)
 	}
+	// The request is saved before the log files open, so a failed save never leaks their handles.
 	if err := os.WriteFile(m.requestPath(handle), saved, 0o600); err != nil {
 		return "", fmt.Errorf("saving the session's request: %w", err)
 	}
+	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
+	var record io.Writer = io.Discard
+	var logFiles []io.Closer
+	if out, err := os.Create(filepath.Join(logs, string(handle)+".jsonl")); err == nil {
+		record, logFiles = out, append(logFiles, out)
+	}
+	if errs, err := os.Create(filepath.Join(logs, string(handle)+".err")); err == nil {
+		cmd.Stderr, logFiles = errs, append(logFiles, errs)
+	}
 	if err := cmd.Start(); err != nil {
+		for _, file := range logFiles {
+			file.Close()
+		}
 		return "", fmt.Errorf("starting claude: %w", err)
 	}
 
 	buf := &bytes.Buffer{}
 	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{}),
-		watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
+		logs: logFiles, watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
 
 	m.mu.Lock()
 	m.sessions[handle] = sess
 	m.mu.Unlock()
+	started = true
 	return handle, nil
 }
 
 // Stream parses stdout with Parse and reports the session's turns, usage, cost and rate limits as
 // they happen; once the stream ends, it waits for claude to exit and readies Result and Resume.
-func (m *Mount) Stream(handle mount.Handle) (<-chan mount.Event, error) {
+func (m *Mount) Stream(ctx context.Context, handle mount.Handle) (<-chan mount.Event, error) {
 	sess, ok := m.get(handle)
 	if !ok {
 		return nil, fmt.Errorf("stream: unknown session %q", handle)
@@ -217,13 +307,14 @@ func (m *Mount) Stream(handle mount.Handle) (<-chan mount.Event, error) {
 	out := make(chan mount.Event)
 	go func() {
 		defer close(out)
-		for event := range Parse(sess.reader) {
-			out <- mount.Event{Turns: event.Turns, Usage: event.Usage, CostUSD: event.CostUSD, RateLimit: event.RateLimit}
+		for event := range Parse(ctx, sess.reader) {
+			out <- event
 		}
 		waitErr := sess.wait()
 		// Nothing the session started may outlive it; a tree that ran away is the session's error.
 		proc.KillGroup(sess.cmd)
 		sess.watcher.Stop()
+		m.ended(sess)
 		if breach := sess.watcher.Breach(); breach != "" {
 			waitErr = fmt.Errorf("the session's process tree ran away (%s) and was killed", breach)
 		}
@@ -251,13 +342,16 @@ func (m *Mount) Result(handle mount.Handle) (mount.Result, error) {
 }
 
 // Stop kills the session's whole process group.
-func (m *Mount) Stop(handle mount.Handle) error {
+func (m *Mount) Stop(ctx context.Context, handle mount.Handle) error {
 	sess, ok := m.get(handle)
 	if !ok {
 		return fmt.Errorf("stop: unknown session %q", handle)
 	}
 	proc.KillGroup(sess.cmd)
-	go func() { _ = sess.wait() }()
+	go func() {
+		_ = sess.wait()
+		m.ended(sess)
+	}()
 	return nil
 }
 

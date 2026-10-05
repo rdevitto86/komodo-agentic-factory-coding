@@ -89,8 +89,10 @@ type Input struct {
 	Cwd       string         `json:"cwd"`
 	ToolName  string         `json:"tool_name"`
 	ToolInput map[string]any `json:"tool_input"`
-	Root      string         `json:"-"`
-	Budget    Budget         `json:"-"`
+	// TranscriptPath is the session's own transcript, whose assistant entries name its turns.
+	TranscriptPath string `json:"transcript_path"`
+	Root           string `json:"-"`
+	Budget         Budget `json:"-"`
 }
 
 // Hook is one row of the table: one job, one stage, the sessions it runs in, and its limits.
@@ -100,6 +102,8 @@ type Hook struct {
 	Event    Event
 	Tools    Tools
 	Sessions []Session
+	// Budgeted marks the hook whose command carries the session's turn and minute budget.
+	Budgeted bool
 	// Limit is the refusals one session gets before the hook allows; zero never refuses.
 	Limit     int
 	Timeout   time.Duration
@@ -173,7 +177,7 @@ func Table() []Hook {
 		{
 			Name: "timewarn", Job: "time and turns used",
 			Event: PostToolUse, Tools: AnyTool, Sessions: []Session{SessionBuilder, SessionLens},
-			Timeout: 10 * time.Second, OnFailure: Skip, run: warnTime,
+			Budgeted: true, Timeout: 10 * time.Second, OnFailure: Skip, run: warnTime,
 		},
 	}
 }

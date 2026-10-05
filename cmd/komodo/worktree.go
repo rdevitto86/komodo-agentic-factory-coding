@@ -38,11 +38,19 @@ func runWorktreeAdd(root string, args []string) {
 		fail(fmt.Errorf("usage: komodo worktree add <branch> [--from <ref>]; unexpected %q", set.Arg(0)))
 	}
 	start := *from
-	if start == "" {
+	switch {
+	case start != "":
+	case line.OnOrigin(root, branch):
+		start = "origin/" + branch
+	default:
 		start = line.StartRef(root, line.DefaultBase(root))
 	}
 	path := filepath.Join(root, line.StateDir, "wt", worktreeSlug(branch))
 	if err := line.AddDetached(root, branch, start, path); err != nil {
+		fail(err)
+	}
+	// A builder's worktree never pushes; a person's does, by the command printed below.
+	if err := line.AllowWorktreePush(path); err != nil {
 		fail(err)
 	}
 	fmt.Println(path)

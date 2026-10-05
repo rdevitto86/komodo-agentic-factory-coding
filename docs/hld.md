@@ -133,7 +133,7 @@ Terms in the Names table of `README.md` keep that meaning. This design adds:
 | Lens | One review angle, run as its own session: correctness, security and readiness, or quality |
 | Fix list | The repair task list built from verified findings or failed checks |
 | Escalation | A stop the conductor can't settle alone: a blocked builder, a time limit, a failure |
-| Blocker note | What the conductor writes into a group's backlog file, on its branch, when the orchestrator can't settle an escalation; published as a draft PR labelled `status: blocked` |
+| Blocker note | What the conductor writes into a group's backlog file, on its branch, when the orchestrator can't settle an escalation; published as a draft PR labelled `status/blocked` |
 | Bound and unbound | Paced to a subscription's usage windows, or to a spend budget on API billing |
 | Economy mode | The cheaper profile and single review lens used on a Pro plan |
 | Golden group | A real merged change rewound to its parent, its own tests hidden from the builder |

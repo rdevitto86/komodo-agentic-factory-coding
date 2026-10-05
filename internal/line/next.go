@@ -132,11 +132,7 @@ func openRun(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	parsed, _, err := LoadBacklog(root)
-	if err != nil {
-		return nil, err
-	}
-	if shipped(root, plan, parsed) {
+	if shipped(root, plan) {
 		return nil, nil
 	}
 	return plan, nil
@@ -227,7 +223,7 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	plan := &Plan{
 		Group: group.ID, Title: group.Title, Type: group.Type(),
 		Version: group.Version(), Mode: group.Mode(), Skipped: done,
-		Base: groupBase(root, parsed, group), Branch: BranchName(group.Type(), group.Slug()),
+		Base: groupBase(root, parsed, group), Branch: group.Branch(),
 	}
 	plan.Worktree = filepath.Join(StateDir, "wt", group.ID)
 	for _, task := range tasks {
@@ -359,14 +355,15 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 			continue
 		}
 		base := groupBase(root, parsed, group)
-		if checkOrigin && base != defaultBase && !ahead[base] && !onOrigin(root, base) {
+		if checkOrigin && base != defaultBase && !ahead[base] && !OnOrigin(root, base) {
 			continue
 		}
 		out = append(out, group)
 		if !stacked {
 			return out
 		}
-		ahead[BranchName(group.Type(), group.Slug())] = true
+		ahead[group.Branch()] = true
+		ahead[group.TitleBranch()] = true
 	}
 	return out
 }
@@ -377,8 +374,8 @@ func hasOrigin(root string) bool {
 	return err == nil
 }
 
-// onOrigin reports whether origin holds the branch, as the last fetch or push recorded it.
-func onOrigin(root, branch string) bool {
+// OnOrigin reports whether origin holds the branch, as the last fetch or push recorded it.
+func OnOrigin(root, branch string) bool {
 	_, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	return err == nil
 }
@@ -398,7 +395,7 @@ func groupBase(root string, parsed backlog.Backlog, group backlog.Group) string 
 		}
 		return DefaultBase(root)
 	}
-	if hasOrigin(root) && !onOrigin(root, base) && mergedParent(parsed, base) {
+	if hasOrigin(root) && !OnOrigin(root, base) && mergedParent(parsed, base) {
 		return DefaultBase(root)
 	}
 	return base
@@ -410,7 +407,7 @@ func canOpen(root, branch string) bool {
 	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		return true
 	}
-	return onOrigin(root, branch)
+	return OnOrigin(root, branch)
 }
 
 // mergedParent reports whether branch is a group's in parsed whose every task is DONE.

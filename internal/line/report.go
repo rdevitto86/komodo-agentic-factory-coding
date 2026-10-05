@@ -17,6 +17,7 @@ type Report struct {
 	Repairs  []string `json:"repairs"`
 	Accepted bool     `json:"accepted"`
 	Tokens   int      `json:"tokens"`
+	Cost     float64  `json:"cost"`
 	Text     string   `json:"-"`
 }
 
@@ -48,29 +49,30 @@ func BuildReport(root string, plan *Plan) (*Report, error) {
 	sort.Strings(report.Done)
 	sort.Strings(report.Blocked)
 	report.Accepted = len(report.Blocked) == 0 && len(report.Done) == len(plan.Tasks)
-	tokens, err := groupTokens(root, plan.Group)
+	tokens, cost, err := groupTokensAndCost(root, plan.Group)
 	if err != nil {
 		return nil, err
 	}
-	report.Tokens = tokens
+	report.Tokens, report.Cost = tokens, cost
 	report.Text = renderReport(report, blockNotes)
 	return report, nil
 }
 
-// groupTokens sums a group's input and output tokens across the run's own build and repair
-// sessions, excluding brief stamps and ad hoc entries from off-run attempts.
-func groupTokens(root, group string) (int, error) {
+// groupTokensAndCost sums every run-file entry's input and output tokens, and its cost, for the
+// group, except brief stamps; cost comes from the host's own result totals.
+func groupTokensAndCost(root, group string) (int, float64, error) {
 	entries, err := Book(root).Read(ledger.RunFile)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	total := 0
+	tokens, cost := 0, 0.0
 	for _, entry := range entries {
-		if entry.Group == group && entry.Run != "" && entry.Station != "brief" {
-			total += entry.TokensIn + entry.TokensOut
+		if entry.Group == group && entry.Station != "brief" {
+			tokens += entry.TokensIn + entry.TokensOut
+			cost += entry.Cost
 		}
 	}
-	return total, nil
+	return tokens, cost, nil
 }
 
 // renderReport writes the report under the headings the accessibility contract names.
@@ -80,6 +82,9 @@ func renderReport(report *Report, notes map[string]string) string {
 		report.Group, len(report.Done), len(report.Blocked), len(report.Repairs)))
 	if report.Accepted {
 		out = append(out, fmt.Sprintf("%d token(s) per accepted group.", report.Tokens))
+	}
+	if report.Cost > 0 {
+		out = append(out, fmt.Sprintf("$%.2f spent on this group's own sessions.", report.Cost))
 	}
 	if len(report.Done) > 0 {
 		out = append(out, "", "## ✅ Successful Changes")

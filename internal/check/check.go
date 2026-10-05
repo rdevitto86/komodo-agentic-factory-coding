@@ -2,22 +2,20 @@
 package check
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
-	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/proc"
 )
 
-// CommandTimeout bounds how long one format, lint or group check may run.
+// CommandTimeout bounds how long one group check may run.
 const CommandTimeout = proc.DefaultTimeout
 
 // Group is the worktree, base ref, and declared file scope one check run covers.
@@ -27,20 +25,15 @@ type Group struct {
 	Files    []string
 }
 
-// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
-const waitDelay = 5 * time.Second
-
-// Run reruns format, lint, the group's own checks, and scope, and returns one problem per failure.
+// Run reruns the group's own checks and scope, and returns one problem per failure.
 // Scope is checked last, since a passing build with a scope violation still needs every problem named.
-func Run(g Group, format, lint string, checks []string) []string {
-	return RunContext(context.Background(), g, format, lint, checks)
+func Run(g Group, checks []string) []string {
+	return RunContext(context.Background(), g, checks)
 }
 
 // RunContext is Run whose commands are killed once ctx is done.
-func RunContext(ctx context.Context, g Group, format, lint string, checks []string) []string {
+func RunContext(ctx context.Context, g Group, checks []string) []string {
 	var problems []string
-	problems = append(problems, runNamed(ctx, g.Worktree, "format", format)...)
-	problems = append(problems, runNamed(ctx, g.Worktree, "lint", lint)...)
 	for _, command := range checks {
 		problems = append(problems, runNamed(ctx, g.Worktree, "check", command)...)
 	}
@@ -53,61 +46,12 @@ func runNamed(ctx context.Context, worktree, name, command string) []string {
 	if command == "" {
 		return nil
 	}
-	ran := Exec(ctx, worktree, CommandTimeout, "sh", "-c", command)
+	argv := proc.ShellArgv(command)
+	ran := proc.ExecContext(ctx, worktree, CommandTimeout, argv[0], argv[1:]...)
 	if ran.OK() {
 		return nil
 	}
 	return []string{fmt.Sprintf("%s: `%s` %v\n%s", name, command, ran.Err(), ran.Output)}
-}
-
-// Exec runs one program in dir under timeout, killing its process group once the timeout passes or ctx is done.
-func Exec(ctx context.Context, dir string, timeout time.Duration, name string, args ...string) proc.Result {
-	clock, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(clock, name, args...)
-	cmd.Dir = dir
-	proc.Group(cmd)
-	cmd.Cancel = func() error {
-		proc.KillGroup(cmd)
-		return nil
-	}
-	cmd.WaitDelay = waitDelay
-	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
-	started := time.Now()
-	err := cmd.Start()
-	var breach string
-	if err == nil {
-		watcher := proc.Watch(cmd.Process.Pid, proc.DefaultLimits)
-		err = cmd.Wait()
-		proc.KillGroup(cmd)
-		if errors.Is(err, exec.ErrWaitDelay) {
-			err = nil
-		}
-		watcher.Stop()
-		breach = watcher.Breach()
-	}
-	result := proc.Result{Output: strings.TrimSpace(output.String()), Seconds: time.Since(started).Seconds()}
-	switch {
-	case breach != "":
-		result.ExitCode = proc.ExitRunaway
-		result.Output = strings.TrimSpace(result.Output + "\n[runaway: " + breach + "; the process tree was killed]")
-	case ctx.Err() == nil && errors.Is(clock.Err(), context.DeadlineExceeded):
-		result.ExitCode, result.TimedOut = proc.ExitTimeout, true
-		result.Output = strings.TrimSpace(
-			result.Output + fmt.Sprintf("\n[timed out after %s; the process group was killed]", timeout),
-		)
-	case err != nil:
-		result.ExitCode = 1
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() > 0 {
-			result.ExitCode = exit.ExitCode()
-		}
-		if result.Output == "" {
-			result.Output = err.Error()
-		}
-	}
-	return result
 }
 
 // Scope names every file the working tree changes against base, untracked ones included,
@@ -128,7 +72,7 @@ func Scope(worktree, base string, files []string) []string {
 	for _, name := range changed {
 		// A declared file's own test is in scope too, as the builder's rules allow.
 		if allowed[name] || allowed[testedBy(name)] || allowed[untagged(testedBy(name))] ||
-			underDeclared(name, files) || testsDeclaredPackage(name, files) {
+			underDeclared(name, files) || testsDeclaredPackage(name, files) || onlyTicks(worktree, base, name) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
@@ -200,13 +144,21 @@ func untagged(name string) string {
 	return stem + ".go"
 }
 
+// diffArgs is the git diff invocation, prefix, colour, and quoting pinned so parsing never
+// depends on the caller's git config.
+func diffArgs(args ...string) []string {
+	return append([]string{
+		"-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+	}, args...)
+}
+
 // changedFiles lists every file the working tree changes since it forked from base, then every untracked file.
 func changedFiles(worktree, base string) ([]string, error) {
 	fork, err := mergeBase(worktree, base)
 	if err != nil {
 		return nil, err
 	}
-	tracked, err := git.Run(worktree, "diff", "--name-only", fork)
+	tracked, err := git.Run(worktree, diffArgs("--name-only", fork)...)
 	if err != nil {
 		return nil, err
 	}
@@ -217,9 +169,58 @@ func changedFiles(worktree, base string) ([]string, error) {
 	return append(splitLines(tracked), untracked...), nil
 }
 
-// mergeBase is the commit HEAD forked from base, so commits landing on base since never count as edits.
+// onlyTicks reports whether name is a backlog group file whose every change since the fork flips a task's checkbox.
+func onlyTicks(worktree, base, name string) bool {
+	if path.Dir(name) != backlog.GroupFilesDir || path.Ext(name) != ".md" {
+		return false
+	}
+	fork, err := mergeBase(worktree, base)
+	if err != nil {
+		return false
+	}
+	out, err := git.Run(worktree, diffArgs("--unified=0", fork, "--", name)...)
+	if err != nil || out == "" {
+		return false
+	}
+	var removed, added []string
+	inHunk := false
+	for _, text := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(text, "@@"):
+			inHunk = true
+		case !inHunk:
+		case strings.HasPrefix(text, "-"):
+			removed = append(removed, strings.Replace(text[1:], "- [ ]", "- [x]", 1))
+		case strings.HasPrefix(text, "+"):
+			added = append(added, text[1:])
+		}
+	}
+	return len(removed) > 0 && slices.Equal(removed, added)
+}
+
+// mergeBase is the newest commit HEAD forked from base, its origin copy, or the line's tip of it,
+// so commits landing on base since never count as edits.
 func mergeBase(worktree, base string) (string, error) {
-	return git.Run(worktree, "merge-base", base, "HEAD")
+	var fork string
+	var firstErr error
+	for _, ref := range []string{base, "refs/remotes/origin/" + base, "refs/komodo/" + base} {
+		candidate, err := git.Run(worktree, "merge-base", ref, "HEAD")
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if fork == "" {
+			fork = candidate
+		} else if _, err := git.Run(worktree, "merge-base", "--is-ancestor", fork, candidate); err == nil {
+			fork = candidate
+		}
+	}
+	if fork == "" {
+		return "", firstErr
+	}
+	return fork, nil
 }
 
 // untrackedFiles lists the files git does not track and does not ignore.
@@ -248,7 +249,7 @@ func Diff(worktree, base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tracked, err := git.Run(worktree, "diff", fork)
+	tracked, err := git.Run(worktree, diffArgs(fork)...)
 	if err != nil {
 		return "", err
 	}

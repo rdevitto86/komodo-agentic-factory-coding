@@ -2,8 +2,6 @@
 package claude
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -72,14 +70,14 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, localUp)), "the "+role.Name+" role as an agent")
 	}
 
-	detected := detect.Load(root)
+	detected, _ := detect.Detect(root)
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
 	}
 	skills = mount.SelectStandards(root, skills)
 	skills = repoSkills(root, skills)
-	builderOwned := RenderBuilderPlugin(&plan, root, detected, skills)
+	builderOwned := RenderBuilderPlugin(&plan, root, skills)
 	reviewerOwned := RenderReviewerPlugin(&plan, root, skills)
 	orchestratorOwned := RenderOrchestratorPlugin(&plan, root, skills)
 	RenderPluginHooks(&plan, root, binary)
@@ -108,11 +106,16 @@ func Render(root string, binary string) (install.Plan, error) {
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "reviewer", "skills"))
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "orchestrator", "skills"))
 
-	settings, err := settingsFile(root, binary)
+	settings, err := settingsFile(root, binary, false)
 	if err != nil {
 		return plan, err
 	}
-	plan.Add(filepath.Join(root, Dir, "settings.json"), settings, "the guard on PreToolUse and the permissions layer")
+	plan.Add(filepath.Join(root, Dir, "settings.json"), settings, "the permissions layer; the global layer runs the guard")
+	lineSettings, err := settingsFile(root, binary, true)
+	if err != nil {
+		return plan, err
+	}
+	plan.Add(filepath.Join(root, Dir, LineSettings), lineSettings, "a line session's only settings: the guard and the permissions layer")
 	plan.AddSeed(filepath.Join(root, Dir, "settings.local.json"), []byte("{\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"), "the personal overlay")
 	plan.AddSeed(filepath.Join(root, "CLAUDE.local.md"), []byte("# Personal overlay\n\nYours. The install never overwrites this file.\n"), "the personal overlay")
 
@@ -140,7 +143,8 @@ const globalSkillsMarker = ".komodo-rendered"
 
 // RenderGlobal plans the user-level orchestrator layer under home: guard, status and prune hooks, and skills.
 func RenderGlobal(root, home, binary string) (install.Plan, error) {
-	plan := install.Plan{Host: "claude", Root: home}
+	plan := install.Plan{Host: "claude", Root: home, Marker: filepath.Join(home, Dir, globalSkillsMarker),
+		Fix: "komodo install --global"}
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
@@ -205,7 +209,7 @@ func globalSettings(path, binary string) ([]byte, error) {
 	if events == nil {
 		events = map[string]any{}
 	}
-	named := hookBinary(binary)
+	named := mount.Publish(binary)
 	command := func(line string) []any { return []any{map[string]any{"type": "command", "command": line}} }
 	own := map[string]map[string]any{
 		"PreToolUse": {"matcher": hookMatcher(), "hooks": command(named + " guard")},
@@ -324,33 +328,12 @@ func agentFile(role mount.Role, ollama bool) string {
 	return strings.Join(head, "\n") + "\n" + role.Instructions() + "\n"
 }
 
-// hookBinary names a copy of binary under ~/.komodo/bin, by its own content, so a rebuild elsewhere
-// never moves an already-rendered repo's hook; a binary this cannot read, hash or copy is named directly.
-func hookBinary(binary string) string {
-	data, err := os.ReadFile(binary)
-	if err != nil {
-		return binary
-	}
-	sum := sha256.Sum256(data)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return binary
-	}
-	target := filepath.Join(home, ".komodo", "bin", "komodo-"+hex.EncodeToString(sum[:])[:12])
-	if _, err := os.Stat(target); err == nil {
-		return target
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return binary
-	}
-	if err := os.WriteFile(target, data, 0o755); err != nil {
-		return binary
-	}
-	return target
-}
+// LineSettings is the settings file a headless line session loads alone, so its guard runs once.
+const LineSettings = "line-settings.json"
 
-// settingsFile renders the hook registration, the permissions convenience layer, and attribution off.
-func settingsFile(root, binary string) ([]byte, error) {
+// settingsFile renders the permissions layer and attribution off, plus the guard when guarded: a line
+// session loads no user settings, so it takes its one guard from here.
+func settingsFile(root, binary string, guarded bool) ([]byte, error) {
 	policy, err := readPolicy(toolkit.FS(root))
 	if err != nil {
 		return nil, err
@@ -359,15 +342,17 @@ func settingsFile(root, binary string) ([]byte, error) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
 	}
 	settings := map[string]any{
-		"hooks": map[string]any{
-			"PreToolUse": []any{map[string]any{
-				"matcher": hookMatcher(),
-				"hooks":   []any{map[string]any{"type": "command", "command": hookBinary(binary) + " guard"}},
-			}},
-		},
 		"permissions": map[string]any{"deny": denyList(root, policy)},
 		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
 		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
+	}
+	if guarded {
+		settings["hooks"] = map[string]any{
+			"PreToolUse": []any{map[string]any{
+				"matcher": hookMatcher(),
+				"hooks":   []any{map[string]any{"type": "command", "command": mount.Publish(binary) + " guard"}},
+			}},
+		}
 	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
@@ -510,12 +495,13 @@ func init() {
 		Contract: func(root, worktree string) mount.Contract {
 			return NewMount(root, worktree, profileTurnCap, 0)
 		},
+		FuzzTargets: []mount.FuzzTarget{{Name: "FuzzGlobalSettings", Package: "./internal/mount/claude"}},
 	})
 	install.RegisterGlobal("claude", RenderGlobal)
 }
 
 // retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.
-var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-", "komodo-ollama-bridge"}
+var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-"}
 
 // Leftovers names each hook, allow rule, and mcpServers entry in this host's user settings that
 // still names a retired command or server.

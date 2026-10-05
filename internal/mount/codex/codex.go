@@ -100,7 +100,8 @@ func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 
 // facetSkills names the facets the detected profile and the repo's own additions select.
 func facetSkills(root string) []string {
-	names, err := facet.Select(root, detect.Load(root), nil)
+	profile, _ := detect.Detect(root)
+	names, err := facet.Select(root, profile, nil)
 	if err != nil {
 		return nil
 	}
@@ -193,14 +194,4 @@ func init() {
 		EventsPath:  EventsPath,
 		Deferred:    "the Codex mount is deferred to a later version; its setup stays in the code, and nothing installs or selects it",
 	})
-}
-
-// Headless returns this host's non-interactive command for one skill and one target; exec
-// defaults to a read-only sandbox, so the line and a builder need workspace-write named explicitly.
-func Headless(skill, target string) (string, []string) {
-	prompt := "/" + skill
-	if target != "" {
-		prompt += " " + target
-	}
-	return "codex", []string{"exec", "--json", "--sandbox", "workspace-write", prompt}
 }

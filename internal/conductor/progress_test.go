@@ -9,7 +9,7 @@ import (
 	"komodo/internal/review"
 )
 
-// TestDriveNeverHoldsTheSameOpenFindingsForTwoRounds is REQ-23: a reviewer raising the same finding
+// TestDriveNeverHoldsTheSameOpenFindingsForTwoRounds proves a reviewer raising the same finding
 // after its repair ends the loop, so no two repair rounds work the same open findings.
 func TestDriveNeverHoldsTheSameOpenFindingsForTwoRounds(t *testing.T) {
 	r := newRig(t)
@@ -89,7 +89,9 @@ func TestDriveStopsALoopThatStopsProgressing(t *testing.T) {
 	}
 }
 
-func TestDriveStopsARepairEndedByARefusalLimit(t *testing.T) {
+// TestDriveEscalatesABlockedRepairAndWaits escalates a repair whose builder reports BLOCKED,
+// the Repairing counterpart of TestDriveEscalatesABlockedBuilderAndWaits.
+func TestDriveEscalatesABlockedRepairAndWaits(t *testing.T) {
 	r := newRig(t)
 	r.stations.checks = [][]string{{"`go vet` exited 1"}}
 	r.host.repairs = []map[string]any{{"result": "BLOCKED"}}

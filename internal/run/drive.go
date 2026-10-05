@@ -248,7 +248,11 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 		"{{group}}", e.Group, "{{branch}}", plan.Branch, "{{left}}", string(e.Left),
 		"{{reason}}", e.Reason, "{{tasks}}", strings.Join(tasks, "\n"),
 	).Replace(definition.Body)
-	machine, _ := plan.Profile.Machine("escalation")
+	machine, ok := plan.Profile.Machine("escalation")
+	if !ok {
+		// A profile naming no escalation machine falls back to the role's own tier, never an empty model.
+		machine = plan.Profile.Tiers.Machine(definition.Tier)
+	}
 	return mount.StartRequest{
 		Role:   "escalation",
 		Brief:  brief,

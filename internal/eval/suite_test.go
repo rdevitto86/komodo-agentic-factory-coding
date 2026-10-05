@@ -77,6 +77,8 @@ func TestLoadRefusesABrokenIndex(t *testing.T) {
 			}
 		}, SuiteFile},
 		{"a repo with no url", func(_ string, s *Suite) { s.Repos[0].URL = "" }, "needs a name, a url and a language"},
+		{"a repo whose url looks like a git option", func(_ string, s *Suite) { s.Repos[0].URL = "--upload-pack=touch" },
+			"which git would read as an option"},
 		{"a repo named twice", func(_ string, s *Suite) { s.Repos[1].Name = s.Repos[0].Name }, "named twice"},
 		{"a group named twice", func(_ string, s *Suite) { s.Groups[1] = s.Groups[0] }, "greet/TG-01.1 is named twice"},
 		{"a group with no id", func(_ string, s *Suite) { s.Groups[0].ID = "" }, "has no id"},

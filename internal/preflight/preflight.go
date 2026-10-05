@@ -2,15 +2,27 @@
 package preflight
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
+	"time"
 
 	"komodo/internal/doctor"
+	"komodo/internal/install"
 	"komodo/internal/mount"
+	"komodo/internal/proc"
 	"komodo/internal/profile"
 )
+
+// toolTimeout bounds how long a tool's own status check may run before it is killed; a test lowers it.
+var toolTimeout = 30 * time.Second
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // Check holds one failed preflight check and the fix the run should name.
 type Check struct {
@@ -21,14 +33,19 @@ type Check struct {
 // Options are the flags that affect which checks run.
 type Options struct {
 	NoShip bool
+	// Warn, when set, receives a non-blocking notice, such as no sandbox existing on native Windows.
+	Warn func(string)
 }
 
 // Run executes every preflight check and returns what failed.
 func Run(root string, options Options) ([]Check, error) {
 	var failures []Check
 
+	// A missing tool fails fast, with the fix named, before doctor or any check that assumes it runs.
+	failures = append(failures, checkTools()...)
+
 	// Doctor runs first.
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: true, RepoOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("doctor failed: %w", err)
 	}
@@ -57,8 +74,8 @@ func Run(root string, options Options) ([]Check, error) {
 		}
 	}
 
-	// The sandbox is required; a platform without one refuses the run.
-	if err := checkSandbox(); err != nil {
+	// The sandbox is required on a platform that has one; native Windows has none and only warns.
+	if err := checkSandbox(root, options); err != nil {
 		failures = append(failures, Check{
 			Name: "sandbox",
 			Fix:  err.Error(),
@@ -105,12 +122,52 @@ func checkHostLogin(root string) error {
 	return nil
 }
 
-// checkForgeCredential reports an error if no forge credential is available.
+// requiredTools are the binaries the line needs on PATH, each with the fix a missing one names.
+var requiredTools = []struct{ name, fix string }{
+	{"git", "git is not on PATH; install git and run again"},
+	{"gh", "gh is not on PATH; install the GitHub CLI and run again"},
+	{"go", "go is not on PATH; install Go and run again"},
+}
+
+// checkTools reports a failure naming the fix for every required binary missing from PATH.
+func checkTools() []Check {
+	var failures []Check
+	for _, tool := range requiredTools {
+		if _, err := exec.LookPath(tool.name); err != nil {
+			failures = append(failures, Check{Name: tool.name, Fix: tool.fix})
+		}
+	}
+	return failures
+}
+
+// checkForgeCredential reports an error if no forge credential is available; a hung gh is killed,
+// process group included, once toolTimeout passes, and the error names the command and its stderr.
 func checkForgeCredential() error {
-	// Check if gh is available and authenticated.
-	cmd := exec.Command("gh", "auth", "status")
-	if err := cmd.Run(); err != nil {
-		return errors.New("no forge credential available; run `gh auth login` to authenticate with the forge")
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stderr := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("gh auth status: timed out after %s: %s", toolTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("gh auth status: no forge credential available; run `gh auth login` to authenticate with the forge: %s", detail)
 	}
 	return nil
 }
@@ -118,17 +175,27 @@ func checkForgeCredential() error {
 // goos is the platform the sandbox check judges; a test swaps it.
 var goos = runtime.GOOS
 
-// checkSandbox reports an error when this platform has no OS sandbox or its tool is not on PATH,
-// since every line session runs sandboxed and the line refuses to run without it.
-func checkSandbox() error {
+// procVersionPath is where the Linux check reads the kernel banner WSL names itself in; a test swaps it.
+var procVersionPath = "/proc/version"
+
+// checkSandbox reports an error when this platform has no OS sandbox or its tool is not on PATH;
+// native Windows has none and runs unsandboxed instead of refusing, noted through options.Warn.
+func checkSandbox(root string, options Options) error {
 	switch goos {
 	case "darwin":
 		if _, err := exec.LookPath("sandbox-exec"); err != nil {
 			return errors.New("line sessions run sandboxed, but sandbox-exec is not on PATH")
 		}
 	case "linux":
+		if data, err := os.ReadFile(procVersionPath); err == nil && install.OnWindowsDrive(root, string(data)) {
+			return fmt.Errorf("%s is on the Windows filesystem under WSL; clone it under your Linux home, such as ~/src, and run again", root)
+		}
 		if _, err := exec.LookPath("bwrap"); err != nil {
 			return errors.New("line sessions run sandboxed, but bubblewrap (bwrap) is not on PATH; install it")
+		}
+	case "windows":
+		if options.Warn != nil {
+			options.Warn("native Windows has no sandbox; line sessions run unsandboxed")
 		}
 	default:
 		return fmt.Errorf("line sessions run sandboxed, but %s has none; run the line on macOS, Linux or WSL2", goos)

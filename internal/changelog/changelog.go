@@ -21,8 +21,20 @@ func Read(root string) (string, error) {
 	return string(data), nil
 }
 
-// versionHeading matches a version heading with or without brackets, a leading v, or a date.
-var versionHeading = regexp.MustCompile(`(?m)^##\s+\[?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\]?.*$`)
+// SemVer matches x.y.z with an optional prerelease such as -alpha.1.
+const SemVer = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+
+// Heading matches a whole version heading line; its first group is the version.
+var Heading = regexp.MustCompile(`(?m)^##\s+\[?v?(` + SemVer + `)\]?.*$`)
+
+// versionHeading is the heading pattern this package reads.
+var versionHeading = Heading
+
+// validVersion is one whole version, with an optional leading v.
+var validVersion = regexp.MustCompile(`^v?` + SemVer + `$`)
+
+// Valid reports whether version is a whole semantic version; Compare sorts anything else first.
+func Valid(version string) bool { return validVersion.MatchString(version) }
 
 // Latest is the highest version text names, or the empty string when it names none.
 func Latest(text string) string {
@@ -35,11 +47,21 @@ func Latest(text string) string {
 	return latest
 }
 
-// Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release.
+// Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release,
+// and a malformed version sorts before every valid one.
 func Compare(left, right string) int {
 	leftCore, leftPre, _ := strings.Cut(left, "-")
 	rightCore, rightPre, _ := strings.Cut(right, "-")
-	a, b := parts(leftCore), parts(rightCore)
+	a, leftOK := parts(leftCore)
+	b, rightOK := parts(rightCore)
+	switch {
+	case !leftOK && !rightOK:
+		return strings.Compare(left, right)
+	case !leftOK:
+		return -1
+	case !rightOK:
+		return 1
+	}
 	for index := 0; index < 3; index++ {
 		if a[index] != b[index] {
 			if a[index] < b[index] {
@@ -89,17 +111,19 @@ func comparePrerelease(left, right string) int {
 	return 0
 }
 
-// parts splits a version core into its three numbers.
-func parts(version string) [3]int {
+// parts splits a version core into its three numbers, reporting false unless it is exactly three of them.
+func parts(version string) ([3]int, bool) {
 	var out [3]int
-	for index, field := range strings.SplitN(version, ".", 3) {
-		if index > 2 {
-			break
-		}
-		number, err := strconv.Atoi(strings.TrimSpace(field))
-		if err == nil {
-			out[index] = number
-		}
+	fields := strings.Split(strings.TrimPrefix(version, "v"), ".")
+	if len(fields) != 3 {
+		return out, false
 	}
-	return out
+	for index, field := range fields {
+		number, err := strconv.Atoi(field)
+		if err != nil || field[0] == '+' {
+			return [3]int{}, false
+		}
+		out[index] = number
+	}
+	return out, true
 }

@@ -6,6 +6,16 @@ import "strings"
 type call struct {
 	words  []string
 	writes []string
+	// stdinBody is the raw heredoc text an interpreter such as python or node reads from stdin.
+	stdinBody string
+	// opaque marks eval of a script the guard could not resolve, always refused unverified.
+	opaque bool
+}
+
+// opaqueScript is one heredoc body an interpreter reads from stdin, scanned apart from the main tokens.
+type opaqueScript struct {
+	words []string
+	body  string
 }
 
 // controlOperators end one call and start the next in a command line.
@@ -22,7 +32,8 @@ func tokenize(command string) []call {
 		}
 		current = call{}
 	}
-	tokens := rawTokens(stripHeredocs(command))
+	stripped, opaque := stripHeredocs(command)
+	tokens := rawTokens(stripped)
 	for index := 0; index < len(tokens); index++ {
 		token := tokens[index]
 		switch {
@@ -38,7 +49,111 @@ func tokenize(command string) []call {
 		}
 	}
 	flush()
+	for _, script := range opaque {
+		calls = append(calls, call{words: script.words, stdinBody: script.body})
+	}
 	return calls
+}
+
+// positionalArgs returns words's own operands, skipping every flag.
+func positionalArgs(words []string) []string {
+	var out []string
+	for _, word := range words {
+		if !strings.HasPrefix(word, "-") {
+			out = append(out, word)
+		}
+	}
+	return out
+}
+
+// sedValueFlags are sed's own flags that take a separate value, consumed and never read as a file.
+var sedValueFlags = map[string]bool{"-e": true, "-f": true, "--expression": true, "--file": true}
+
+// sedInPlaceTargets returns sed's file operands when -i or --in-place edits them in place, BSD's own
+// empty backup suffix consumed like -e and -f's values; with no script flag, the first operand is the script.
+func sedInPlaceTargets(args []string) []string {
+	inPlace, hasScript := false, false
+	var operands []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "-i" && index+1 < len(args) && args[index+1] == "":
+			inPlace = true
+			index++
+		case arg == "-i" || strings.HasPrefix(arg, "-i") || arg == "--in-place" || strings.HasPrefix(arg, "--in-place="):
+			inPlace = true
+		case sedValueFlags[arg]:
+			hasScript = true
+			index++
+		case strings.HasPrefix(arg, "-"):
+			// another flag, ignored
+		default:
+			operands = append(operands, arg)
+		}
+	}
+	if !inPlace {
+		return nil
+	}
+	if !hasScript && len(operands) > 0 {
+		operands = operands[1:]
+	}
+	return operands
+}
+
+// commandWrites returns the extra paths a known command writes to, beyond a shell redirect: every
+// tee operand, cp and mv's destination, sed -i's file operands, and git's --output or -o target.
+func commandWrites(words []string) []string {
+	if len(words) == 0 {
+		return nil
+	}
+	switch commandName(words[0]) {
+	case "git":
+		return gitOutputTargets(words[1:])
+	case "tee":
+		return positionalArgs(words[1:])
+	case "cp", "mv":
+		args := positionalArgs(words[1:])
+		if len(args) < 2 {
+			return nil
+		}
+		return args[len(args)-1:]
+	case "sed":
+		return sedInPlaceTargets(words[1:])
+	}
+	return nil
+}
+
+// gitOutputCommands are the git subcommands whose --output or -o writes a file or directory.
+var gitOutputCommands = map[string]bool{"diff": true, "log": true, "show": true, "format-patch": true}
+
+// gitOutputTargets returns every --output, --output-directory or -o value a git call's subcommand
+// carries, wherever it sits before a bare --.
+func gitOutputTargets(args []string) []string {
+	args = skipGlobalFlags(args)
+	if len(args) == 0 || !gitOutputCommands[args[0]] {
+		return nil
+	}
+	var targets []string
+	rest := args[1:]
+	for index := 0; index < len(rest); index++ {
+		arg := rest[index]
+		switch {
+		case arg == "--":
+			return targets
+		case arg == "--output" || arg == "--output-directory" || arg == "-o":
+			if index+1 < len(rest) {
+				index++
+				targets = append(targets, rest[index])
+			}
+		case strings.HasPrefix(arg, "--output="):
+			targets = append(targets, strings.TrimPrefix(arg, "--output="))
+		case strings.HasPrefix(arg, "--output-directory="):
+			targets = append(targets, strings.TrimPrefix(arg, "--output-directory="))
+		case strings.HasPrefix(arg, "-o") && !strings.HasPrefix(arg, "--"):
+			targets = append(targets, strings.TrimPrefix(arg, "-o"))
+		}
+	}
+	return targets
 }
 
 // isHeredocControl reports whether char ends one simple command and starts the next, outside quotes.
@@ -126,6 +241,25 @@ func heredocAllowlisted(before, after []string, piped bool) bool {
 	default:
 		return false
 	}
+}
+
+// opaqueInterpreters read a script on stdin the guard cannot parse as shell, scanned separately.
+var opaqueInterpreters = map[string]bool{
+	"python": true, "python2": true, "python3": true, "node": true, "nodejs": true, "ruby": true, "perl": true,
+}
+
+// isOpaqueInterpreterStdin reports whether before names a bare opaque interpreter, with no script
+// file among its own or after's operands, so it reads its program from stdin.
+func isOpaqueInterpreterStdin(before, after []string, piped bool) bool {
+	if piped || len(before) == 0 || !opaqueInterpreters[commandName(before[0])] {
+		return false
+	}
+	for _, arg := range append(append([]string{}, before[1:]...), after...) {
+		if !strings.HasPrefix(arg, "-") {
+			return false
+		}
+	}
+	return true
 }
 
 // restOfLine reads the words left on a heredoc operator's own line, starting right after its
@@ -241,11 +375,19 @@ func countHeredocs(runes []rune) int {
 	return count
 }
 
+// pendingHeredoc is one heredoc on the current line, waiting for its body once the line ends.
+type pendingHeredoc struct {
+	delimiter string
+	// opaque names the interpreter reading this heredoc from stdin, or nil for a plain prose skip.
+	opaque []string
+}
+
 // stripHeredocs removes a heredoc's body only for an allowlisted, unpiped, unnested prose consumer,
 // and only when the whole command carries exactly one heredoc; two or more skips neither.
-func stripHeredocs(command string) string {
+func stripHeredocs(command string) (string, []opaqueScript) {
 	var out strings.Builder
-	var pending []string
+	var pending []pendingHeredoc
+	var scripts []opaqueScript
 	inSingle, inDouble, inBacktick := false, false, false
 	subDepth := 0
 	runes := []rune(command)
@@ -316,15 +458,21 @@ func stripHeredocs(command string) string {
 			index += consumed
 			before := strings.Fields(string(runes[cmdStart:operatorStart]))
 			after, piped := restOfLine(runes, index)
-			if delimiter != "" && oneHeredoc && subDepth == 0 && !inBacktick &&
-				heredocAllowlisted(before, after, piped) {
-				pending = append(pending, delimiter)
+			switch {
+			case delimiter != "" && oneHeredoc && subDepth == 0 && !inBacktick && heredocAllowlisted(before, after, piped):
+				pending = append(pending, pendingHeredoc{delimiter: delimiter})
+			case delimiter != "" && oneHeredoc && subDepth == 0 && !inBacktick && isOpaqueInterpreterStdin(before, after, piped):
+				pending = append(pending, pendingHeredoc{delimiter: delimiter, opaque: before})
 			}
 		case char == '\n':
 			out.WriteRune('\n')
 			index++
-			for _, delimiter := range pending {
-				index = skipHeredocBody(runes, index, delimiter)
+			for _, item := range pending {
+				var body string
+				index, body = skipHeredocBody(runes, index, item.delimiter)
+				if item.opaque != nil {
+					scripts = append(scripts, opaqueScript{words: item.opaque, body: body})
+				}
 			}
 			pending = nil
 			cmdStart = index
@@ -342,7 +490,7 @@ func stripHeredocs(command string) string {
 			index++
 		}
 	}
-	return out.String()
+	return out.String(), scripts
 }
 
 // heredocDelimiter reads a heredoc operator's delimiter word right after it, quoted or bare, and
@@ -368,8 +516,9 @@ func heredocDelimiter(runes []rune) (string, int) {
 }
 
 // skipHeredocBody advances past one heredoc's body: every line up to and including the first one
-// that trims to delimiter, and returns the index right after it.
-func skipHeredocBody(runes []rune, start int, delimiter string) int {
+// that trims to delimiter, returning the index right after it and the body's own raw text.
+func skipHeredocBody(runes []rune, start int, delimiter string) (int, string) {
+	var body strings.Builder
 	index := start
 	for index <= len(runes) {
 		lineStart := index
@@ -381,23 +530,36 @@ func skipHeredocBody(runes []rune, start int, delimiter string) int {
 			if index < len(runes) {
 				index++
 			}
-			return index
+			return index, body.String()
 		}
+		body.WriteString(string(runes[lineStart:index]))
 		if index >= len(runes) {
-			return index
+			return index, body.String()
 		}
+		body.WriteRune('\n')
 		index++
 	}
-	return index
+	return index, body.String()
 }
 
-// rawTokens splits a command line into words and operators, honouring single and double quotes
-// and a backslash escape, the way a shell's own word splitting does before anything else runs.
+// hasClosingBacktick reports whether a closing backtick follows, so a lone one, naming no
+// command, stays a literal character instead of opening a quote that runs to the end.
+func hasClosingBacktick(runes []rune) bool {
+	for _, r := range runes {
+		if r == '`' {
+			return true
+		}
+	}
+	return false
+}
+
+// rawTokens splits a command line into words and operators, honouring single and double quotes, a
+// matched pair of backticks, and a backslash escape, the way a shell's own word splitting does.
 func rawTokens(command string) []string {
 	var tokens []string
 	var buf strings.Builder
 	open := false
-	inSingle, inDouble := false, false
+	inSingle, inDouble, inBacktick := false, false, false
 	flushWord := func() {
 		if open {
 			tokens = append(tokens, buf.String())
@@ -431,10 +593,19 @@ func rawTokens(command string) []string {
 			default:
 				buf.WriteRune(char)
 			}
+		case inBacktick:
+			open = true
+			if char == '`' {
+				inBacktick = false
+			} else {
+				buf.WriteRune(char)
+			}
 		case char == '\'':
 			inSingle, open = true, true
 		case char == '"':
 			inDouble, open = true, true
+		case char == '`' && hasClosingBacktick(runes[index+1:]):
+			inBacktick, open = true, true
 		case char == '\\' && index+1 < len(runes):
 			index++
 			open = true

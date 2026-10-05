@@ -2,11 +2,14 @@ package release
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/gate"
 )
 
 const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
@@ -117,6 +120,15 @@ func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
 	}
 }
 
+// TestCheckReportsAMalformedVersionTagButIgnoresOtherTags proves a tag meant as a version but not
+// x.y.z is drift, while a tag that is not a version at all stays quiet.
+func TestCheckReportsAMalformedVersionTagButIgnoresOtherTags(t *testing.T) {
+	drift := Check(twoVersions, []string{"v2.0.0", "v1.3.0", "v1.4", "prototype-final"}, []string{"2.0.0"})
+	if len(drift) != 1 || drift[0].Subject != "v1.4" {
+		t.Fatalf("drift = %+v, want only v1.4 reported", drift)
+	}
+}
+
 func TestTagNameAndMessage(t *testing.T) {
 	if TagName("2.0.0") != "v2.0.0" || TagMessage("2.0.0") != "release 2.0.0" {
 		t.Fatal("tag name or message is wrong")
@@ -142,30 +154,28 @@ func TestTargetsCoverEveryPlatformTheHookRuns(t *testing.T) {
 	}
 }
 
-func TestBuildAssetsIsByteIdenticalPerCommit(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
+func TestBuildAssetsStopsWhenABuildDoesNotReproduce(t *testing.T) {
+	previous := build
+	t.Cleanup(func() { build = previous })
+	calls := 0
+	fake := func(stable bool) func(string, string, gate.Target) (string, error) {
+		return func(_ string, dir string, target gate.Target) (string, error) {
+			calls++
+			body := "same"
+			if !stable {
+				body = fmt.Sprintf("build %d", calls)
+			}
+			path := filepath.Join(dir, target.Name)
+			return path, os.WriteFile(path, []byte(body), 0o755)
+		}
 	}
-	var sums [2]string
-	for index := range sums {
-		dir := t.TempDir()
-		paths, err := BuildAssets(root, dir, io.Discard)
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest, err := WriteSums(dir, paths)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(manifest)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sums[index] = string(data)
+	build = fake(true)
+	if paths, err := BuildAssets(t.TempDir(), t.TempDir(), io.Discard); err != nil || len(paths) != len(Targets) {
+		t.Fatalf("paths = %v, %v; identical builds must pass", paths, err)
 	}
-	if sums[0] != sums[1] {
-		t.Fatalf("two builds of one commit differ:\n%s\n%s", sums[0], sums[1])
+	build = fake(false)
+	if _, err := BuildAssets(t.TempDir(), t.TempDir(), io.Discard); err == nil || !strings.Contains(err.Error(), "does not reproduce") {
+		t.Fatalf("err = %v; a build that differs from its twin must stop the release", err)
 	}
 }
 
@@ -221,5 +231,23 @@ func TestReadChangelogReadsTheFileAsWritten(t *testing.T) {
 	}
 	if text, err := ReadChangelog(path); err != nil || text != twoVersions {
 		t.Fatalf("read %q, %v", text, err)
+	}
+}
+
+func TestCheckReportsADatedHeadingWithNoBody(t *testing.T) {
+	text := "# Changelog\n\n## 1.0.1 — 2026-10-02\n\n## 1.0.0 — 2026-09-30\n\n- shipped\n"
+	drift := Check(text, nil, nil)
+	if len(drift) != 1 || drift[0].Subject != "1.0.1" || !strings.Contains(drift[0].Detail, "no body") {
+		t.Fatalf("drift = %+v; a dated heading with nothing under it has no body", drift)
+	}
+	if versions := Versions(text); versions[1].Body != "- shipped" {
+		t.Fatalf("body = %q; a heading's date is not its body", versions[1].Body)
+	}
+}
+
+func TestATagThatIsNoVersionIsNeverCompared(t *testing.T) {
+	text := "## 1.0.0 — 2026-09-30\n\n- shipped\n"
+	if got := Unreleased(text, []string{"prototype-final", "v0.9.0"}); len(got) != 1 || got[0] != "1.0.0" {
+		t.Fatalf("unreleased = %v; prototype-final is no version and must not count", got)
 	}
 }

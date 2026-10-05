@@ -3,6 +3,7 @@ package hooks
 import (
 	"bytes"
 	"encoding/json"
+	"komodo/internal/testhome"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,10 @@ func TestMain(m *testing.M) {
 		WriteTools: map[string]bool{"Write": true},
 		PathFields: []string{"file_path"},
 	})
-	os.Exit(m.Run())
+	cleanup := testhome.Isolate()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // dispatchResult is what one Dispatch call printed and returned.

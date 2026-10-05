@@ -20,6 +20,7 @@ import (
 	"komodo/internal/gate"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/release"
 )
 
 // syncRepo builds a root on main whose origin holds one commit the root lacks, and returns that commit.
@@ -95,7 +96,7 @@ func toolkitCheckout(t *testing.T, root, builtFrom string) {
 }
 
 // pinRelease makes root a product repo whose profiles pin version, sends HOME to a temp dir, and swaps the
-// download for one serving body and a SHA256SUMS with sum; it returns the release binary's path and the URLs fetched.
+// download for one serving body and a release.SumsFile with sum; it returns the release binary's path and the URLs fetched.
 func pinRelease(t *testing.T, root, version string, body []byte, sum string) (string, *[]string) {
 	t.Helper()
 	profile := []byte(`{"release": "` + version + `", "roles": {}}`)
@@ -114,11 +115,11 @@ func pinRelease(t *testing.T, root, version string, body []byte, sum string) (st
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("KOMODO_RELEASE_URL", "https://example.test/download")
-	name := gate.LocalTarget().Name
+	name := gate.PlatformName()
 	base := "https://example.test/download/v" + strings.TrimPrefix(version, "v") + "/"
 	served := map[string][]byte{
-		base + name:         body,
-		base + "SHA256SUMS": []byte(sum + "  " + name + "\n" + strings.Repeat("0", 64) + "  komodo-other\n"),
+		base + name:             body,
+		base + release.SumsFile: []byte(sum + "  " + name + "\n" + strings.Repeat("0", 64) + "  komodo-other\n"),
 	}
 	fetched := &[]string{}
 	old := fetch
@@ -150,10 +151,10 @@ func TestSyncFetchesThePinnedReleaseOutsideTheToolkit(t *testing.T) {
 		drop      string
 		noHome    bool
 	}{
-		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: "SHA256SUMS",
+		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: release.SumsFile,
 			wantErr: "404"},
 		{name: "a release with no binary installs nothing", pin: "1.0.0-beta.2", sum: good,
-			drop: gate.LocalTarget().Name, wantErr: "404"},
+			drop: gate.PlatformName(), wantErr: "404"},
 		{name: "no home installs nothing", pin: "1.0.0-beta.2", sum: good, noHome: true, wantErr: "HOME"},
 		{name: "a pinned release installs once its checksum matches", pin: "1.0.0-beta.2", sum: good,
 			wantLine: "binary: fetched release 1.0.0-beta.2, checksum verified", wantBody: true},
@@ -628,6 +629,35 @@ func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
 	}
 }
 
+// TestSyncCleanupKeepsAnEpicOpenWhenAFileFailsToParse proves a group file whose checkbox line
+// misses the task grammar never counts as ended, so its epic's cleanup PR is never opened.
+func TestSyncCleanupKeepsAnEpicOpenWhenAFileFailsToParse(t *testing.T) {
+	malformed := "## [TG-01.2] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: EPIC-01\n```\n\n" +
+		"- [ ] not a task line, missing the bold id\n"
+	root, bare := cleanupRepo(t, map[string]string{
+		"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true),
+		"TG-01.2-b.md": malformed,
+	})
+	var created int
+	client := &pr.Client{Run: func(string, ...string) (string, error) {
+		created++
+		return "", nil
+	}}
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err != nil {
+		t.Fatal(err)
+	}
+	if created != 0 {
+		t.Fatalf("PRs opened = %d, want none; a file that fails to parse must keep its epic open; out = %s", created, out.String())
+	}
+	if !strings.Contains(out.String(), "cleanup: no epic's files outlived it") {
+		t.Fatalf("out = %q", out.String())
+	}
+	if heads := gitOut(t, bare, "branch", "--list", "chore/cleanup-epic-01"); heads != "" {
+		t.Fatalf("origin holds %s though EPIC-01 is still open", heads)
+	}
+}
+
 func TestSyncCleanupSkipsWhatItCannotOrNeedNotOpen(t *testing.T) {
 	ended := map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)}
 	cases := []struct {
@@ -681,8 +711,10 @@ func TestSyncCleanupSkipsWhatItCannotOrNeedNotOpen(t *testing.T) {
 	}
 }
 
+// TestSyncCleanupReturnsAForgeThatRefusesThePR proves a refused PR still cleans up the worktree, its
+// tip ref and the branch it already pushed, so a retry opens the PR instead of failing forever.
 func TestSyncCleanupReturnsAForgeThatRefusesThePR(t *testing.T) {
-	root, _ := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
+	root, bare := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
 	client := &pr.Client{Run: func(string, ...string) (string, error) {
 		return "", errors.New("HTTP 422")
 	}}
@@ -690,9 +722,101 @@ func TestSyncCleanupReturnsAForgeThatRefusesThePR(t *testing.T) {
 	if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err == nil || !strings.Contains(err.Error(), "HTTP 422") {
 		t.Fatalf("Sync = %v; a refused cleanup PR must be returned; out = %s", err, out.String())
 	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "wt", "cleanup-epic-01")); err == nil {
+		t.Fatal("a cleanup worktree survived a refused PR")
+	}
+	if gitOut(t, root, "for-each-ref", "refs/komodo/") != "" {
+		t.Fatal("a cleanup's tip ref survived a refused PR")
+	}
+	if heads := gitOut(t, bare, "branch", "--list", "chore/cleanup-epic-01"); heads != "" {
+		t.Fatal("origin kept the pushed cleanup branch though its PR was refused")
+	}
+
+	var created [][]string
+	client.Run = func(_ string, args ...string) (string, error) {
+		created = append(created, args)
+		return "https://example.invalid/pr/9", nil
+	}
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err != nil {
+		t.Fatalf("Sync after a retry = %v; out = %s", err, out.String())
+	}
+	if len(created) == 0 {
+		t.Fatal("a retried cleanup never opened its pull request")
+	}
 }
 
-func TestSyncBinaryDoesNotStampDirtyTree(t *testing.T) {
+// TestSyncCleanupRemovesTheWorktreeAndTipWhenThePushFails proves a push a server hook refuses still
+// cleans up the worktree and tip ref, so a retry re-cuts instead of erroring on a registered path.
+func TestSyncCleanupRemovesTheWorktreeAndTipWhenThePushFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the server hook is a shell script")
+	}
+	root, bare := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
+	hook := filepath.Join(bare, "hooks", "pre-receive")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err == nil {
+		t.Fatalf("Sync = nil; a refused push must be returned; out = %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "wt", "cleanup-epic-01")); err == nil {
+		t.Fatal("a cleanup worktree survived a refused push")
+	}
+	if gitOut(t, root, "for-each-ref", "refs/komodo/") != "" {
+		t.Fatal("a cleanup's tip ref survived a refused push")
+	}
+
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		return "https://example.invalid/pr/9", nil
+	}}
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err != nil {
+		t.Fatalf("Sync after the push works = %v; out = %s", err, out.String())
+	}
+}
+
+// TestSyncBinaryReturnsItsOwnRebuildEvenWhenAPostMergeHookWouldStampFirst proves a real post-merge
+// hook sees KOMODO_SYNC during the merge and skips, so syncBinary's own rebuild is the one that runs.
+func TestSyncBinaryReturnsItsOwnRebuildEvenWhenAPostMergeHookWouldStampFirst(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the installed hook is a shell script")
+	}
+	root, ahead := syncRepo(t)
+	builds, installs := fakeBuild(t)
+	stale := gitOut(t, root, "rev-parse", "HEAD")
+	toolkitCheckout(t, root, stale)
+	hook := "#!/bin/sh\nif [ -z \"$" + gate.SyncEnv + "\" ]; then git rev-parse HEAD > bin/" + BuiltFrom + "; fi\n"
+	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "post-merge"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	got, err := Sync(SyncOptions{Root: root, Stdout: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "bin", gate.LocalTarget().Name)
+	if got != want {
+		t.Fatalf("Sync returned %q, want %q; a hook that stamped first must never hide the rebuilt path", got, want)
+	}
+	if *builds != 1 || *installs != 1 {
+		t.Fatalf("builds = %d, installs = %d, want 1 each; out = %s", *builds, *installs, out.String())
+	}
+	if !strings.Contains(out.String(), "binary: rebuilt") {
+		t.Fatalf("out = %q", out.String())
+	}
+	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(recorded)) != ahead {
+		t.Fatalf("marker = %q, want %q", recorded, ahead)
+	}
+}
+
+func TestSyncBinaryDropsTheStampOnADirtyTree(t *testing.T) {
 	root, ahead := syncRepo(t)
 	builds, installs := fakeBuild(t)
 	toolkitCheckout(t, root, ahead)
@@ -710,11 +834,8 @@ func TestSyncBinaryDoesNotStampDirtyTree(t *testing.T) {
 	if *installs != 0 {
 		t.Fatalf("installs = %d, want 0; out = %s", *installs, out.String())
 	}
-	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(recorded)) != ahead {
-		t.Fatalf("marker = %q, want %q (unchanged)", recorded, ahead)
+	// A dirty tree's build is no commit's, so the stamp goes and the next clean sync rebuilds.
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("marker still present (%v); a dirty build must drop it", err)
 	}
 }

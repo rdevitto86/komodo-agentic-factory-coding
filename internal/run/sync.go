@@ -20,6 +20,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/release"
 )
 
 // BuiltFrom is the file beside the built binary that records the commit it was built from.
@@ -28,8 +29,6 @@ const BuiltFrom = ".built-from"
 const (
 	// releaseURL is where published releases download from; KOMODO_RELEASE_URL overrides it, as install does.
 	releaseURL = "https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download"
-	// releaseSums is the checksum manifest every published release carries.
-	releaseSums = "SHA256SUMS"
 	// fetchTimeout bounds one release download.
 	fetchTimeout = 5 * time.Minute
 	// fetchLimit bounds one downloaded asset, in bytes.
@@ -279,6 +278,10 @@ func endedEpics(root, ref string) (map[string][]string, error) {
 		for _, task := range group.Tasks {
 			open[group.EpicID] = open[group.EpicID] || !task.Done
 		}
+		// A file with no parsed task or a parse problem may hide open work, so its epic stays open.
+		if len(group.Problems) > 0 || len(group.Tasks) == 0 {
+			open[group.EpicID] = true
+		}
 	}
 	for epic := range open {
 		if open[epic] {
@@ -289,34 +292,55 @@ func endedEpics(root, ref string) (map[string][]string, error) {
 }
 
 // openCleanup cuts branch from origin's base in its own worktree, deletes the epic's group files there,
-// pushes it, and opens its PR; the worktree and its tip ref go once the PR is open.
+// pushes it, and opens its PR; any failure after the cut removes the worktree, its tip, and a pushed branch.
 func openCleanup(root string, client *pr.Client, base, branch, epic string, paths []string) error {
 	worktree := filepath.Join(root, line.StateDir, "wt", "cleanup-"+strings.ToLower(epic))
 	if err := line.AddDetached(root, branch, "origin/"+base, worktree); err != nil {
 		return err
 	}
-	if _, err := git.Run(worktree, append([]string{"rm", "--quiet", "--"}, paths...)...); err != nil {
-		return err
-	}
-	title := fmt.Sprintf("chore: Remove %s's group files, every group shipped", epic)
-	if _, err := git.Run(worktree, "commit", "-m", title); err != nil {
-		return err
-	}
-	if err := line.PushFromWorktree(root, worktree, branch); err != nil {
-		return err
-	}
-	body := fmt.Sprintf("## Summary\n\nEvery group of %s has shipped, so its group files outlived it.\n\n"+
-		"## Changes\n\n- **backlog** — deletes %s\n\n## Validation\n\n"+
-		"`komodo sync` found every task in these files ticked on `%s`.\n",
-		epic, "`"+strings.Join(paths, "`, `")+"`", base)
-	if _, err := client.Create(base, branch, title, body, false); err != nil {
+	pushed, err := commitAndOpenCleanup(root, worktree, client, base, branch, epic, paths)
+	if err != nil {
+		abandonCleanup(root, worktree, branch, pushed)
 		return err
 	}
 	if _, err := git.Run(root, "worktree", "remove", "--force", worktree); err != nil {
 		return err
 	}
-	_, err := git.Run(root, "update-ref", "-d", line.TipRef(branch))
+	_, err = git.Run(root, "update-ref", "-d", line.TipRef(branch))
 	return err
+}
+
+// commitAndOpenCleanup deletes paths in worktree, commits, pushes branch and opens its pull request,
+// reporting whether the push went through so a later failure knows whether to delete it.
+func commitAndOpenCleanup(
+	root, worktree string, client *pr.Client, base, branch, epic string, paths []string,
+) (pushed bool, err error) {
+	if _, err := git.Run(worktree, append([]string{"rm", "--quiet", "--"}, paths...)...); err != nil {
+		return false, err
+	}
+	title := fmt.Sprintf("chore: Remove %s's group files, every group shipped", epic)
+	if _, err := git.Run(worktree, "commit", "-m", title); err != nil {
+		return false, err
+	}
+	if err := line.PushFromWorktree(root, worktree, branch); err != nil {
+		return false, err
+	}
+	body := fmt.Sprintf("## Summary\n\nEvery group of %s has shipped, so its group files outlived it.\n\n"+
+		"## Changes\n\n- **backlog** — deletes %s\n\n## Validation\n\n"+
+		"`komodo sync` found every task in these files ticked on `%s`.\n",
+		epic, "`"+strings.Join(paths, "`, `")+"`", base)
+	_, err = client.Create(base, branch, title, body, false)
+	return true, err
+}
+
+// abandonCleanup removes a failed cleanup's worktree and tip ref, and its pushed branch on origin too
+// when pushed is true, so the next sync re-cuts cleanly instead of failing on an already-registered path.
+func abandonCleanup(root, worktree, branch string, pushed bool) {
+	_, _ = git.Run(root, "worktree", "remove", "--force", worktree)
+	_, _ = git.Run(root, "update-ref", "-d", line.TipRef(branch))
+	if pushed {
+		_, _ = git.Run(root, "push", "origin", "--delete", branch)
+	}
 }
 
 // syncRoot fetches origin and fast-forwards a clean default branch to it, returning the commit HEAD ends on;
@@ -361,8 +385,12 @@ func syncRoot(root string, dryRun bool, out io.Writer, suffix string) (string, e
 		return head, nil
 	}
 	if !dryRun {
-		if _, err := git.Run(root, "merge", "--ff-only", upstream); err != nil {
-			return "", err
+		// The merge's own post-merge hook sees this and skips its rebuild, so syncBinary's is the only one.
+		_ = os.Setenv(gate.SyncEnv, "1")
+		_, mergeErr := git.Run(root, "merge", "--ff-only", upstream)
+		_ = os.Unsetenv(gate.SyncEnv)
+		if mergeErr != nil {
+			return "", mergeErr
 		}
 	}
 	fmt.Fprintf(out, "root: updated %s..%s%s\n", short(head), short(upstream), suffix)
@@ -434,7 +462,7 @@ func syncRelease(root string, dryRun bool, out io.Writer, suffix string) (string
 	name := filepath.Base(path)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
-	sums, err := fetch(ctx, base+"/"+releaseSums)
+	sums, err := fetch(ctx, base+"/"+release.SumsFile)
 	if err != nil {
 		return "", err
 	}
@@ -445,7 +473,7 @@ func syncRelease(root string, dryRun bool, out io.Writer, suffix string) (string
 		}
 	}
 	if want == "" {
-		return "", fmt.Errorf("%s for release %s lists no %s; nothing was installed", releaseSums, pin, name)
+		return "", fmt.Errorf("%s for release %s lists no %s; nothing was installed", release.SumsFile, pin, name)
 	}
 	body, err := fetch(ctx, base+"/"+name)
 	if err != nil {
@@ -495,7 +523,7 @@ func httpGet(ctx context.Context, url string) ([]byte, error) {
 
 // syncConfig re-renders every installed host's whole config at the root when the doctor reports drift.
 func syncConfig(root string, dryRun bool, out io.Writer, suffix string) error {
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: true, RepoOnly: true})
 	if err != nil {
 		return err
 	}

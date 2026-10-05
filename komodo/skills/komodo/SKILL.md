@@ -52,5 +52,6 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo eval [--list|--cases|--runs N]  The golden suite: list it, run the eval cases, or drive each group N times
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
+  komodo git-hook <name>      One git hook's checks; each installed hook is one exec into this
   komodo help [--skill]       This list, or the komodo skill generated from it
 ```

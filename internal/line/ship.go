@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,11 +16,19 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
+
+// pushTimeout bounds how long one push or pre-push hook may run before it is killed; a test lowers it.
+var pushTimeout = proc.DefaultTimeout
+
+// waitDelay bounds how long a killed push or hook's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // ShipResult is what the ship station did with one group.
 type ShipResult struct {
@@ -68,7 +77,7 @@ func Scrub(base []string) []string {
 	out := make([]string, 0, len(base)+6)
 	for _, entry := range base {
 		key, _, found := strings.Cut(entry, "=")
-		if !found || slices.Contains(dropped, key) || credentialShaped(key) || isOverride(key) {
+		if !found || slices.Contains(dropped, key) || slices.Contains(git.RepoPointers, key) || credentialShaped(key) || isOverride(key) {
 			continue
 		}
 		out = append(out, entry)
@@ -117,20 +126,24 @@ func writeShipHandoff(root string, handoff ShipHandoff) error {
 	if !PlainGroup(handoff.Group) {
 		return fmt.Errorf("a ship handoff needs a plain group id, not %q", handoff.Group)
 	}
-	path := HandoffPath(root, handoff.Group)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(handoff, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return fsx.WriteFile(HandoffPath(root, handoff.Group), append(data, '\n'), 0o644)
 }
 
 // ShipGroup commits, pushes, opens the pull request, and flips the statuses.
 // A scrubbed environment commits and hands the push off instead of failing on a credential it lacks.
-func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (result *ShipResult, err error) {
+func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (*ShipResult, error) {
+	return ShipGroupContext(context.Background(), root, plan, waves, client)
+}
+
+// ShipGroupContext is ShipGroup under ctx: its own commit and its push die once ctx is done, so a stop
+// mid-hook or mid-push never lands either.
+func ShipGroupContext(
+	ctx context.Context, root string, plan *Plan, waves []*WaveResult, client *pr.Client,
+) (result *ShipResult, err error) {
 	if plan.WaitUntil != "" {
 		return nil, fmt.Errorf("%s is paused until %s; a plan whose waves a pause blanked cannot ship",
 			plan.Group, plan.WaitUntil)
@@ -199,23 +212,23 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	// File findings before push so they are in the ship commit.
 	filed, err := FileFindings(group, plan.Group, minor)
 	if err != nil {
-		return result, err
+		return result, unstageShipWork(group, err)
 	}
 	result.Filed = filed
 	if len(filed) > 0 {
 		// Stage whichever backlog file the findings landed in for commit.
 		stagePath, err := findingsPath(group, plan.Group)
 		if err != nil {
-			return nil, err
+			return nil, unstageShipWork(group, err)
 		}
 		if err := stageWork(group, []string{stagePath}); err != nil {
-			return nil, err
+			return nil, unstageShipWork(group, err)
 		}
 	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
-		if _, err := git.Run(group, "commit", "-m", message); err != nil {
-			return nil, err
+		if err := commitContext(ctx, group, message); err != nil {
+			return nil, unstageShipWork(group, err)
 		}
 	}
 	if err := ClearStatus(root, shippedIDs); err != nil {
@@ -253,13 +266,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
+	if err := PushFromWorktreeContext(ctx, root, group, plan.Branch); err != nil {
 		if !errors.Is(err, ErrNoCredential) {
 			return nil, err
 		}
 		// The group keeps its commits and stops before Ship; komodo ship finishes it once a credential is back.
 		outcome = "handoff"
-		return result, errors.Join(err, writeShipHandoff(root, handoff), writeCredentialNote(root, plan, group, err))
+		return result, errors.Join(err, writeShipHandoff(root, handoff),
+			writeCredentialNote(root, group, plan.Group, plan.Title, plan.Branch, err))
 	}
 	// The credential stays with the push; after_publish is repo-written, so it runs scrubbed.
 	if command := AfterPublishCommand(root, group); command != "" {
@@ -272,22 +286,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if client == nil {
 		return result, nil
 	}
-	// Every PR opens as a draft, or labelled status: wip where the forge refuses one.
-	url, draft, wip, warnings, err := createEpicPull(client, result.Base, plan.Branch, title, body)
+	// Every PR opens as a draft, or labelled status/wip where the forge refuses one.
+	url, draft, wip, kept, warnings, err := openDraftPull(
+		client, result.Base, plan.Branch, title, body, wanted, OptionalLabels(root, result.Base), true)
 	if err != nil {
-		// A re-ship after an escalation finds its pull request still open, and refreshes it instead.
-		open, viewErr := client.View(plan.Branch)
-		if viewErr != nil || open.State != "OPEN" {
-			return result, err
-		}
-		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
-			return result, err
-		}
-		url, draft = open.URL, open.Draft
+		return result, err
 	}
 	result.URL, result.Draft = url, draft
-	kept, labelWarnings := ApplyLabelSet(client, url, wanted, OptionalLabels(root, result.Base))
-	result.Warnings = append(warnings, labelWarnings...)
+	result.Warnings = warnings
 	if len(result.Blocked) > 0 || !checksPassed(waves) {
 		result.Labels = append(wip, kept...)
 		return result, nil
@@ -299,6 +305,38 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	result.Labels, result.Draft, result.Ready = kept, false, true
 	return result, nil
+}
+
+// openOrRefresh returns a pull request create already opened, or refreshes one already OPEN when create
+// failed, editing its title and body first when edit is set; a re-ship finds the PR still open.
+func openOrRefresh(client *pr.Client, branch, title, body string, edit bool, url string, draft bool, createErr error) (string, bool, error) {
+	if createErr == nil {
+		return url, draft, nil
+	}
+	open, viewErr := client.View(branch)
+	if viewErr != nil || open.State != "OPEN" {
+		return "", false, createErr
+	}
+	if edit {
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return "", false, err
+		}
+	}
+	return open.URL, open.Draft, nil
+}
+
+// openDraftPull opens branch's pull request as a draft, or refreshes one already open, then applies
+// wanted and optional labels; editOpen also refreshes an open pull request's title and body first.
+func openDraftPull(client *pr.Client, base, branch, title, body string, wanted, optional []string, editOpen bool) (
+	url string, draft bool, wip, kept, warnings []string, err error,
+) {
+	url, draft, wip, warnings, err = createEpicPull(client, base, branch, title, body)
+	url, draft, err = openOrRefresh(client, branch, title, body, editOpen, url, draft, err)
+	if err != nil {
+		return "", false, nil, nil, nil, err
+	}
+	kept, labelWarnings := ApplyLabelSet(client, url, wanted, optional)
+	return url, draft, wip, kept, append(warnings, labelWarnings...), nil
 }
 
 // checksPassed reports whether the group ran its checks and every one passed.
@@ -314,7 +352,7 @@ func checksPassed(waves []*WaveResult) bool {
 	return true
 }
 
-// markReady turns a PR ready for review: a draft leaves draft, and a normal PR drops the status: wip label.
+// markReady turns a PR ready for review: a draft leaves draft, and a normal PR drops the status/wip label.
 func markReady(client *pr.Client, url string, draft bool) error {
 	if draft {
 		return client.Ready(url)
@@ -389,6 +427,15 @@ func declaredFiles(plan *Plan) []string {
 	return declared
 }
 
+// unstageShipWork undoes ship's own staging when err is set, so a step that fails after stageWork
+// leaves the group's index as it found it instead of blocking the next commit or merge.
+func unstageShipWork(group string, err error) error {
+	if err != nil {
+		_, _ = git.Run(group, "reset")
+	}
+	return err
+}
+
 // StationPrepare is the ledger station Prepare stamps, always before any push.
 const StationPrepare = "prepare"
 
@@ -449,7 +496,7 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if err := syncTip(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
-	if err := runPrePush(group, clean, diffTip(root, plan.Branch), "refs/heads/"+plan.Branch); err != nil {
+	if err := runPrePush(context.Background(), group, clean, diffTip(root, plan.Branch), "refs/heads/"+plan.Branch); err != nil {
 		return []string{"the pre-push hook refuses the group: " + redactURL(err.Error(), pushURL)}, nil
 	}
 	return rebaseForRepair(root, group, plan.Branch, base)
@@ -508,28 +555,41 @@ func conflictFixes(files []string, target string) []string {
 // rebaseForRepair rebases the group onto the latest base, or merges it into a pushed branch; a conflict
 // leaves its markers in the worktree and returns one fix per conflicted file.
 func rebaseForRepair(root, group, branch, base string) ([]string, error) {
-	if hasOrigin(group) {
-		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
-		_ = Fetch(group, base)
-	}
-	target := StartRef(group, base)
-	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+	target, exists := catchUpTarget(group, base)
+	if !exists {
 		return nil, nil
 	}
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
 		return nil, nil
 	}
-	args, abort := []string{"rebase", "--autostash", target}, []string{"rebase", "--abort"}
-	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
-	if onOrigin(group, branch) {
-		args, abort = []string{"merge", "--autostash", "--no-edit", target}, []string{"merge", "--abort"}
-	}
+	args, abort := RebaseOrMergeArgs(target, OnOrigin(group, branch))
 	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
 	fixes, err := settleCatchUp(group, target, abort, args...)
 	if err != nil || len(fixes) > 0 || tipErr != nil {
 		return fixes, err
 	}
 	return nil, Advance(root, branch, group, old)
+}
+
+// catchUpTarget fetches base from origin when the group has one, then names the ref a group is caught
+// up to; a target no commit names comes back as !exists, so each caller returns with nothing to do.
+func catchUpTarget(group, base string) (target string, exists bool) {
+	if hasOrigin(group) {
+		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
+		_ = Fetch(group, base)
+	}
+	target = StartRef(group, base)
+	_, err := git.Run(group, "rev-parse", "--verify", "--quiet", target)
+	return target, err == nil
+}
+
+// RebaseOrMergeArgs chooses git's rebase or merge arguments, with their abort, for catching a branch up
+// to target: a merge for a pushed branch, since it is never rewritten, else a rebase.
+func RebaseOrMergeArgs(target string, pushed bool) (args, abort []string) {
+	if pushed {
+		return []string{"merge", "--autostash", "--no-edit", "--", target}, []string{"merge", "--abort"}
+	}
+	return []string{"rebase", "--autostash", "--", target}, []string{"rebase", "--abort"}
 }
 
 // settleCatchUp runs one rebase or merge step, returning its conflicted files as fixes; a failure with
@@ -611,10 +671,10 @@ func markedFiles(group, target string) ([]string, error) {
 }
 
 // blockedLabel is the label a stopped group's draft pull request carries.
-const blockedLabel = "status: blocked"
+const blockedLabel = "status/blocked"
 
 // ShipBlocked commits a stopped group's work as WIP, then its blocker note with open tasks BLOCKED, and publishes
-// the branch as a draft PR labelled status: blocked; a scrubbed environment keeps both commits local.
+// the branch as a draft PR with the usual labels plus status/blocked; a scrubbed environment keeps both commits local.
 func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.Client) (*ShipResult, error) {
 	worktree := WorktreePath(root, plan.Worktree)
 	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
@@ -652,37 +712,38 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 	}
 	title := fmt.Sprintf("%s: %s (%s), blocked", plan.Type, plan.Title, plan.Group)
 	body := note.Render()
-	url, err := client.Create(result.Base, plan.Branch, title, body, true)
+	url, createErr := client.Create(result.Base, plan.Branch, title, body, true)
+	url, _, err = openOrRefresh(client, plan.Branch, title, body, true, url, true, createErr)
 	if err != nil {
-		open, viewErr := client.View(plan.Branch)
-		if viewErr != nil || open.State != "OPEN" {
-			return result, err
-		}
-		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
-			return result, err
-		}
-		url = open.URL
+		return result, err
 	}
 	result.URL = url
-	result.Labels, result.Warnings = labelBlocked(client, url)
+	kept, warnings := ApplyLabelSet(client, url, []string{"@agent", ScopeLabel(root, declared)}, OptionalLabels(root, result.Base))
+	blockedLabels, blockedWarnings := labelBlocked(client, url)
+	result.Labels, result.Warnings = append(kept, blockedLabels...), append(warnings, blockedWarnings...)
 	return result, nil
 }
 
+// credentialNoteSubject is the subject writeCredentialNote commits, so staleReview can skip its own commits too.
+func credentialNoteSubject(title, group string) string {
+	return fmt.Sprintf("docs: %s waits on a forge credential (%s)", title, group)
+}
+
 // writeCredentialNote commits a blocker note on the group's branch naming the refused push and komodo ship as the fix.
-func writeCredentialNote(root string, plan *Plan, worktree string, cause error) error {
+func writeCredentialNote(root, worktree, group, title, branch string, cause error) error {
 	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return err
 	}
-	state, _ := RunFor(root, plan.Group)
-	if _, err := addBlockerNote(worktree, plan.Group, backlog.BlockerNote{
+	state, _ := RunFor(root, group)
+	if _, err := addBlockerNote(worktree, group, backlog.BlockerNote{
 		At: time.Now().UTC(), Run: state.Run, State: "Shipping", Items: []string{cause.Error()},
-		Needs: "a valid forge credential, then `komodo ship " + plan.Group + "`",
-		Saved: fmt.Sprintf("commit `%s` on `%s`", head, plan.Branch),
+		Needs: "a valid forge credential, then `komodo ship " + group + "`",
+		Saved: fmt.Sprintf("commit `%s` on `%s`", head, branch),
 	}); err != nil {
 		return err
 	}
-	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s waits on a forge credential (%s)", plan.Title, plan.Group))
+	return commitStaged(worktree, nil, credentialNoteSubject(title, group))
 }
 
 // addBlockerNote writes note into the group's own docs/backlog file, returning every task the note
@@ -734,14 +795,26 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 	if _, err := git.Run(root, "check-ref-format", "--branch", handoff.Branch); err != nil {
 		return nil, fmt.Errorf("the handoff names %q, which is not a valid branch; nothing was pushed", handoff.Branch)
 	}
-	worktree := handoff.Worktree
-	if worktree == "" {
-		worktree = root
+	// ship.json is agent-writable; its own worktree is trusted only once it matches the group's saved run.
+	state, err := LoadRunFor(root, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%s has no run recorded for its handoff; nothing was pushed: %w", groupID, err)
+	}
+	worktree := WorktreePath(root, state.Worktree)
+	if handoff.Worktree != "" && handoff.Worktree != worktree {
+		return nil, fmt.Errorf("the handoff under %s names worktree %q, which differs from its run's %q; nothing was pushed",
+			groupID, handoff.Worktree, worktree)
 	}
 	if err := dropCredentialNote(worktree, handoff); err != nil {
 		return nil, err
 	}
 	if err := PushFromWorktree(root, worktree, handoff.Branch); err != nil {
+		if errors.Is(err, ErrNoCredential) {
+			// The push still lacks its credential, so the note dropCredentialNote removed must come back.
+			if noteErr := writeCredentialNote(root, worktree, handoff.Group, handoff.Title, handoff.Branch, err); noteErr != nil {
+				return nil, errors.Join(err, noteErr)
+			}
+		}
 		return nil, err
 	}
 	result := &ShipResult{Group: groupID, Branch: handoff.Branch, Base: handoff.Base, Draft: true}
@@ -753,17 +826,13 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 		}
 	}
 	if client != nil {
-		url, draft, wip, warnings, err := createEpicPull(client, handoff.Base, handoff.Branch, handoff.Title, handoff.Body)
+		url, draft, wip, kept, warnings, err := openDraftPull(
+			client, handoff.Base, handoff.Branch, handoff.Title, handoff.Body, handoff.Labels, OptionalLabels(root, handoff.Base), false)
 		if err != nil {
-			open, viewErr := client.View(handoff.Branch)
-			if viewErr != nil || open.State != "OPEN" {
-				return result, err
-			}
-			url, draft = open.URL, open.Draft
+			return result, err
 		}
-		kept, labelWarnings := ApplyLabelSet(client, url, handoff.Labels, OptionalLabels(root, handoff.Base))
 		result.URL, result.Draft = url, draft
-		result.Labels, result.Warnings = append(wip, kept...), append(warnings, labelWarnings...)
+		result.Labels, result.Warnings = append(wip, kept...), warnings
 	}
 	Stamp(root, ledger.Entry{Group: groupID, Station: "ship", Outcome: "done"})
 	return result, os.Remove(path)
@@ -800,23 +869,9 @@ func commitStaged(worktree string, declared []string, message string) error {
 	return err
 }
 
-// labelBlocked adds the status: blocked label the repo defines; a label whose name holds a space never
-// matches KeepKnown's rule, so it is matched here by its whole name.
+// labelBlocked adds the repo's status/blocked label through the shared labelNamed helper.
 func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
-	known, err := client.Labels()
-	if err != nil {
-		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
-	}
-	for _, label := range known {
-		if label != blockedLabel && !strings.HasPrefix(label, blockedLabel+" ") {
-			continue
-		}
-		if err := client.Label(url, []string{label}); err != nil {
-			return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
-		}
-		return []string{label}, nil
-	}
-	return nil, []string{"the repo has no " + blockedLabel + " label"}
+	return labelNamed(client, url, blockedLabel)
 }
 
 // ApplyLabelSet adds the repo labels matching wanted and optional, warning only on a missing wanted one.
@@ -860,16 +915,12 @@ func liveBase(root, base string) string {
 // catchUp brings the group onto the latest base keeping edits: a rebase, or merges for a pushed branch.
 // Its tip ref follows; a conflict aborts and names the files.
 func catchUp(root, group, branch, base string) error {
-	if hasOrigin(group) {
-		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
-		_ = Fetch(group, base)
-	}
-	target := StartRef(group, base)
-	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+	target, exists := catchUpTarget(group, base)
+	if !exists {
 		return nil
 	}
 	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
-	pushed := onOrigin(group, branch)
+	pushed := OnOrigin(group, branch)
 	// A person's push to the branch is merged in before the base, since a pushed branch is never rewritten.
 	if pushed {
 		remote := "origin/" + branch
@@ -880,15 +931,16 @@ func catchUp(root, group, branch, base string) error {
 		}
 	}
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err != nil {
-		if pushed {
-			if err := mergeStep(group, target, "%s moved and the group no longer merges it; resolve %s on the group branch, then ship"); err != nil {
-				return err
-			}
-		} else if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
+		args, abort := RebaseOrMergeArgs(target, pushed)
+		if _, err := git.Run(group, args...); err != nil {
 			conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
-			_, _ = git.Run(group, "rebase", "--abort")
-			return fmt.Errorf("%s moved and the group no longer rebases onto it; resolve %s on the group branch, then ship",
-				target, strings.Join(strings.Fields(conflicts), ", "))
+			_, _ = git.Run(group, abort...)
+			verb := "rebases onto"
+			if pushed {
+				verb = "merges"
+			}
+			return fmt.Errorf("%s moved and the group no longer %s it; resolve %s on the group branch, then ship",
+				target, verb, strings.Join(strings.Fields(conflicts), ", "))
 		}
 	}
 	if tipErr != nil {
@@ -971,6 +1023,12 @@ func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.
 // It refuses a critical ref, since the push carries the forge credential and landing is the human's merge.
 func PushFromWorktree(root, worktree, branch string) error {
+	return PushFromWorktreeContext(context.Background(), root, worktree, branch)
+}
+
+// PushFromWorktreeContext is PushFromWorktree under ctx: its pre-push hook and its push die once ctx
+// is done, so a stop mid-push never lands it.
+func PushFromWorktreeContext(ctx context.Context, root, worktree, branch string) error {
 	if guard.Load(root, root).IsCritical(branch) {
 		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", branch)
 	}
@@ -978,7 +1036,7 @@ func PushFromWorktree(root, worktree, branch string) error {
 		return err
 	}
 	source := diffTip(root, branch)
-	if err := pushRef(root, worktree, source, branch); err != nil {
+	if err := pushRef(ctx, root, worktree, source, branch); err != nil {
 		return err
 	}
 	DropLease(root, branch)
@@ -1019,8 +1077,9 @@ func syncTip(root, worktree, branch string) error {
 	return Advance(root, branch, worktree, old)
 }
 
-// pushRef pushes source to branch on the root's origin URL, past its refused pushurl, after the pre-push hook.
-func pushRef(root, worktree, source, branch string) error {
+// pushRef pushes source to branch on the root's origin URL, past its refused pushurl, after the pre-push hook;
+// it and the push die once ctx is done.
+func pushRef(ctx context.Context, root, worktree, source, branch string) error {
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
@@ -1028,21 +1087,40 @@ func pushRef(root, worktree, source, branch string) error {
 	ref := "refs/heads/" + branch
 	clean, username, password := splitCredential(pushURL)
 	// The hook runs here without the credential, so the push that holds it skips the hook.
-	if err := runPrePush(worktree, clean, source, ref); err != nil {
+	if err := runPrePush(ctx, worktree, clean, source, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	args := []string{"push", "--no-verify", clean, source + ":" + ref}
 	env := os.Environ()
 	if username != "" || password != "" {
-		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
+		args = append([]string{"-c", "credential.helper=", "-c", credentialHelperKey(clean) + "=" + pushCredentialHelper}, args...)
 		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
 	}
-	push := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	push := exec.CommandContext(ctx, "git", args...)
 	push.Dir = worktree
 	push.Env = env
-	if out, err := push.CombinedOutput(); err != nil {
-		failure := redactURL(fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out))), pushURL)
-		if credentialRefused(string(out)) {
+	proc.Group(push)
+	push.Cancel = func() error {
+		proc.KillGroup(push)
+		return nil
+	}
+	push.WaitDelay = waitDelay
+	output := proc.NewBoundedWriter(proc.MaxOutput)
+	push.Stdout, push.Stderr = output, output
+	runErr := push.Run()
+	proc.KillGroup(push)
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("git push to origin %s: timed out after %s: %s", branch, pushTimeout,
+			redactURL(strings.TrimSpace(output.String()), pushURL))
+	}
+	if runErr != nil {
+		failure := redactURL(fmt.Sprintf("%v: %s", runErr, strings.TrimSpace(output.String())), pushURL)
+		if credentialRefused(output.String()) {
 			return fmt.Errorf("git push to origin %s: %w: %s", branch, ErrNoCredential, failure)
 		}
 		return fmt.Errorf("git push to origin %s: %s", branch, failure)
@@ -1076,6 +1154,16 @@ const (
 const pushCredentialHelper = `!f() { test "$1" = get || exit 0; echo "username=$` + pushUsernameEnv +
 	`"; echo "password=$` + pushPasswordEnv + `"; }; f`
 
+// credentialHelperKey is the config key that scopes a credential helper to clean's own protocol and host, so
+// a redirect or proxy asking for another host's credential is answered by no helper this push configures.
+func credentialHelperKey(clean string) string {
+	parsed, err := url.Parse(clean)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "credential.helper"
+	}
+	return "credential." + parsed.Scheme + "://" + parsed.Host + ".helper"
+}
+
 // splitCredential returns an http(s) URL without its user and secret, and those two apart; other URLs pass unchanged.
 func splitCredential(raw string) (clean, username, password string) {
 	parsed, err := url.Parse(raw)
@@ -1091,8 +1179,9 @@ func splitCredential(raw string) (clean, username, password string) {
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in hookEnv's environment.
-func runPrePush(worktree, url, source, ref string) error {
+// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in Scrub's
+// environment; it dies once ctx is done.
+func runPrePush(ctx context.Context, worktree, url, source, ref string) error {
 	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", source)
 	if err != nil {
 		return nil
@@ -1109,45 +1198,35 @@ func runPrePush(worktree, url, source, ref string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
-	cmd.Env = hookEnv(os.Environ())
+	cmd.Env = Scrub(os.Environ())
 	// The line's own push passes the lease the hook would refuse another writer for.
 	if held, ok := Lease(worktree, strings.TrimPrefix(ref, "refs/heads/"), time.Now()); ok {
 		cmd.Env = append(cmd.Env, LockEnv+"="+strconv.Itoa(held.Holder.PID))
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%v: %s", err, Clip(string(out), 4000, "pre-push"))
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	output := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = output, output
+	runErr := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("timed out after %s: %s", pushTimeout, Clip(output.String(), 4000, "pre-push"))
+	}
+	if runErr != nil {
+		return fmt.Errorf("%v: %s", runErr, Clip(output.String(), 4000, "pre-push"))
 	}
 	return nil
-}
-
-// forgeSecrets are the variables that carry a forge credential by name.
-var forgeSecrets = []string{
-	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
-}
-
-// hookEnv is env with every forge credential dropped, and git's credential helper and prompt switched off.
-func hookEnv(env []string) []string {
-	overrides := map[string]string{
-		"GIT_TERMINAL_PROMPT": "0",
-		"GIT_CONFIG_COUNT":    "1",
-		"GIT_CONFIG_KEY_0":    "credential.helper",
-		"GIT_CONFIG_VALUE_0":  "",
-		"GH_CONFIG_DIR":       filepath.Join(os.TempDir(), "komodo-gh-noauth"),
-	}
-	out := make([]string, 0, len(env)+len(overrides))
-	for _, entry := range env {
-		key, _, _ := strings.Cut(entry, "=")
-		if _, set := overrides[key]; set || contains(forgeSecrets, key) {
-			continue
-		}
-		out = append(out, entry)
-	}
-	for key, value := range overrides {
-		out = append(out, key+"="+value)
-	}
-	return out
 }
 
 // credentialRe matches the user and secret a URL can carry before its host.

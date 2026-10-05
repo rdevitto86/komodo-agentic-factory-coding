@@ -1,15 +1,19 @@
 package line
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/fsx"
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
@@ -256,6 +260,12 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 
 // CommitBuild commits a group builder's uncommitted work onto the group branch, so review reads it in the branch's diff.
 func CommitBuild(root string, plan *Plan) error {
+	return CommitBuildContext(context.Background(), root, plan)
+}
+
+// CommitBuildContext is CommitBuild under ctx: its commit, and the pre-commit hook it runs, die once
+// ctx is done, so a stop mid-hook never lands the commit.
+func CommitBuildContext(ctx context.Context, root string, plan *Plan) error {
 	worktree := WorktreePath(root, plan.Worktree)
 	if _, err := git.Run(worktree, "rev-parse", "--git-dir"); err != nil {
 		return nil
@@ -271,13 +281,44 @@ func CommitBuild(root string, plan *Plan) error {
 		return err
 	}
 	old, tipErr := git.Run(worktree, "rev-parse", "--verify", TipRef(plan.Branch))
-	if _, err := git.Run(worktree, "commit", "-m", fmt.Sprintf("%s: %s, as built (%s)", plan.Type, plan.Title, plan.Group)); err != nil {
+	message := fmt.Sprintf("%s: %s, as built (%s)", plan.Type, plan.Title, plan.Group)
+	if err := commitContext(ctx, worktree, message); err != nil {
 		return err
 	}
 	if tipErr != nil {
 		return nil
 	}
 	return Advance(worktree, plan.Branch, worktree, old)
+}
+
+// commitContext runs git commit -m message in worktree under ctx, so a stop while its pre-commit hook
+// runs kills the hook before it can land the commit.
+func commitContext(ctx context.Context, worktree, message string) error {
+	clock, cancel := context.WithTimeout(ctx, git.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(clock, "git", "commit", "-m", message)
+	cmd.Dir = worktree
+	cmd.Env = git.WithoutRepoPointers(os.Environ())
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	output := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = output, output
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(clock.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("git commit: timed out after %s: %s", git.Timeout, strings.TrimSpace(output.String()))
+	}
+	if err != nil {
+		return fmt.Errorf("git commit: %v: %s", err, strings.TrimSpace(output.String()))
+	}
+	return nil
 }
 
 // stageWork stages every change in cwd except the state dir and each mount's rendered project copies, unless declared.
@@ -402,15 +443,11 @@ func bumpAttempt(root, taskID, failure, diff string) (Attempt, error) {
 	attempt.Count++
 	attempt.Failure = failure
 	attempt.Diff = diff
-	path := attemptPath(root, taskID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return attempt, err
-	}
 	data, err := json.MarshalIndent(attempt, "", "  ")
 	if err != nil {
 		return attempt, err
 	}
-	return attempt, os.WriteFile(path, append(data, '\n'), 0o644)
+	return attempt, fsx.WriteFile(attemptPath(root, taskID), append(data, '\n'), 0o644)
 }
 
 // clearAttempt drops a task's failure record once it closes.

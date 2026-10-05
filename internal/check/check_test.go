@@ -113,6 +113,25 @@ func TestDiffCoversCommittedUncommittedAndUntrackedEdits(t *testing.T) {
 	}
 }
 
+func TestDiffIgnoresTheCallersGitConfig(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n", "café.go": "package a\n"})
+	mustOutput(t, worktree, "config", "diff.noprefix", "true")
+	mustOutput(t, worktree, "config", "color.ui", "always")
+	diff, err := Diff(worktree, base)
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	got := map[string]bool{}
+	for _, line := range ParseAddedLines(diff) {
+		got[line.File] = true
+	}
+	for _, want := range []string{"a.go", "café.go"} {
+		if !got[want] {
+			t.Fatalf("added lines = %v, want %q", got, want)
+		}
+	}
+}
+
 func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
 		"a.go": "package a\n", "a_test.go": "package a\n", "b/b_test.go": "package b\n", "ui/c.test.ts": "x\n",
@@ -181,21 +200,18 @@ func TestScopeSkipsWithNoBase(t *testing.T) {
 func TestRunReportsEachFailure(t *testing.T) {
 	cases := []struct {
 		name    string
-		format  string
-		lint    string
 		checks  []string
 		wantLen int
 		want    string
 	}{
-		{"everything passes", "true", "true", []string{"true"}, 0, ""},
-		{"format fails", "exit 1", "true", nil, 1, "format:"},
-		{"lint fails", "true", "exit 2", nil, 1, "lint:"},
-		{"a group check fails", "true", "true", []string{"exit 3"}, 1, "check:"},
+		{"everything passes", []string{"true"}, 0, ""},
+		{"a check fails", []string{"exit 1"}, 1, "check:"},
+		{"two checks fail", []string{"exit 1", "exit 2"}, 2, "check:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
-			problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, tc.format, tc.lint, tc.checks)
+			problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, tc.checks)
 			if len(problems) != tc.wantLen {
 				t.Fatalf("problems = %v, want %d", problems, tc.wantLen)
 			}
@@ -215,7 +231,7 @@ func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), stopAfter)
 	defer cancel()
 	began := time.Now()
-	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "", "", []string{"sleep 60"})
+	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, []string{"sleep 60"})
 	if took := time.Since(began); took > bound {
 		t.Fatalf("run took %s after its context ended, want under %s", took, bound)
 	}
@@ -224,34 +240,11 @@ func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
 	}
 }
 
-func TestExecReportsHowACommandEnded(t *testing.T) {
-	const timeout = 200 * time.Millisecond
-	cases := []struct {
-		name     string
-		command  string
-		exit     int
-		timedOut bool
-		output   string
-	}{
-		{"it passes", "echo fine", 0, false, "fine"},
-		{"it fails", "echo broken; exit 3", 3, false, "broken"},
-		{"its clock runs out", "sleep 60", 124, true, "timed out after 200ms"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ran := Exec(context.Background(), t.TempDir(), timeout, "sh", "-c", tc.command)
-			if ran.ExitCode != tc.exit || ran.TimedOut != tc.timedOut || !strings.Contains(ran.Output, tc.output) {
-				t.Fatalf("result = %+v, want exit %d, timed out %v, output naming %q", ran, tc.exit, tc.timedOut, tc.output)
-			}
-		})
-	}
-}
-
 func TestRunCombinesFailuresWithScope(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n", "b.go": "package b\n"})
-	problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "exit 1", "true", nil)
+	problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, []string{"exit 1"})
 	if len(problems) != 2 {
-		t.Fatalf("problems = %v, want a format failure and a scope failure", problems)
+		t.Fatalf("problems = %v, want a check failure and a scope failure", problems)
 	}
 }
 
@@ -264,6 +257,67 @@ func advanceBase(t *testing.T, worktree, base string) string {
 	mustOutput(t, worktree, "commit", "-q", "-m", "base moves on")
 	mustOutput(t, worktree, "checkout", "-q", "-")
 	return "trunk"
+}
+
+// commitAll stages every change in dir and commits it under message.
+func commitAll(t *testing.T, dir, message string) {
+	t.Helper()
+	mustOutput(t, dir, "add", "-A")
+	mustOutput(t, dir, "commit", "-q", "-m", message)
+}
+
+func TestScopeRunsAgainstTheBranchsOwnForkPoint(t *testing.T) {
+	cases := []struct {
+		name string
+		refs func(t *testing.T, worktree, seed, integration string)
+	}{
+		{"a stale local base behind its origin copy", func(t *testing.T, worktree, seed, integration string) {
+			mustOutput(t, worktree, "branch", "stack", seed)
+			mustOutput(t, worktree, "update-ref", "refs/remotes/origin/stack", integration)
+		}},
+		{"a stack branch held only on origin", func(t *testing.T, worktree, _, integration string) {
+			mustOutput(t, worktree, "update-ref", "refs/remotes/origin/stack", integration)
+		}},
+		{"an integration branch held only at the line's tip", func(t *testing.T, worktree, _, integration string) {
+			mustOutput(t, worktree, "update-ref", "refs/komodo/stack", integration)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, seed := initRepo(t, map[string]string{"z.go": "package z\n"})
+			integration := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
+			tc.refs(t, worktree, seed, integration)
+			writeFile(t, worktree, "a.go", "package a\n")
+			commitAll(t, worktree, "group work")
+			if problems := Scope(worktree, "stack", []string{"a.go"}); len(problems) != 0 {
+				t.Fatalf("problems = %v, want none; z.go is the integration branch's, not the group's", problems)
+			}
+		})
+	}
+}
+
+func TestScopeNeverCountsABacklogTick(t *testing.T) {
+	const open = "## [TG-1] G\n\n- [ ] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n"
+	cases := []struct {
+		name     string
+		edited   string
+		problems int
+	}{
+		{"a tick", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n", 0},
+		{"a tick and a retitled task", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Renamed\n", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, _ := initRepo(t, map[string]string{"docs/backlog/TG-1-g.md": open})
+			base := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
+			writeFile(t, worktree, "docs/backlog/TG-1-g.md", tc.edited)
+			writeFile(t, worktree, "a.go", "package a\n")
+			commitAll(t, worktree, "close TSK-1.1")
+			if problems := Scope(worktree, base, []string{"a.go"}); len(problems) != tc.problems {
+				t.Fatalf("problems = %v, want %d", problems, tc.problems)
+			}
+		})
+	}
 }
 
 func TestScopeAndDiffIgnoreCommitsLandingOnBaseAfterTheFork(t *testing.T) {

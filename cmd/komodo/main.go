@@ -61,6 +61,7 @@ const usage = `komodo: the code assembly line.
   komodo eval [--list|--cases|--runs N]  The golden suite: list it, run the eval cases, or drive each group N times
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
+  komodo git-hook <name>      One git hook's checks; each installed hook is one exec into this
   komodo help [--skill]       This list, or the komodo skill generated from it
 `
 
@@ -89,7 +90,15 @@ func main() {
 	}
 	root, err := repoRoot()
 	if err != nil {
-		fail(err)
+		switch os.Args[1] {
+		case "install":
+			// Install also sets up a machine with no repo yet: it then installs only the user's global layer.
+		case "guard", "hook":
+			// The global settings run these in every session on the machine; outside a repo they do nothing.
+			exit(0)
+		default:
+			fail(err)
+		}
 	}
 	switch os.Args[1] {
 	case "init":
@@ -164,6 +173,8 @@ func main() {
 		runRecall(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
+	case "git-hook":
+		runGitHook(root, os.Args[2:])
 	case "eval":
 		runEval(root, os.Args[2:])
 	default:

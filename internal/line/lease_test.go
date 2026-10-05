@@ -68,6 +68,52 @@ func TestLeaseIsTakenOnlyWhenABuilderWrites(t *testing.T) {
 	}
 }
 
+// sabotageLeases replaces root's git common dir's komodo/leases with a plain file, so any later
+// write under it fails instead of succeeding.
+func sabotageLeases(t *testing.T, root string) {
+	t.Helper()
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(common, "komodo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "leases"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTakeLeasesReturnsTheFailureInsteadOfDiscardingIt(t *testing.T) {
+	root, _, _ := detachedGroup(t, "feat/held")
+	sabotageLeases(t, root)
+	plan := &Plan{Group: "TG-1", Branch: "feat/held"}
+	if err := takeLeases(root, plan, &Action{Action: "spawn", Role: "builder", Task: "TG-1.1"}); err == nil {
+		t.Fatal("takeLeases returned nil though the lease directory cannot be written")
+	}
+}
+
+func TestAFailedLeaseTakeStopsTheBuilderInStep(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	briefPath := filepath.Join(root, StateDir, "briefs", next.Task+".md")
+	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(briefPath, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sabotageLeases(t, root)
+	if next, err = Step(root, ""); err == nil {
+		t.Fatalf("Step = %+v, nil; a failed lease take must stop the builder with an error", next)
+	}
+}
+
 func TestTheLeaseEnds(t *testing.T) {
 	root, _, worktree := detachedGroup(t, "feat/held")
 	taken := time.Now()

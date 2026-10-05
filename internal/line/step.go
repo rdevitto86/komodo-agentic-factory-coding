@@ -33,17 +33,23 @@ type Action struct {
 	Spawns   []Action `json:"spawns,omitempty"`
 }
 
-// Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs.
+// Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs; a
+// failed lease take stops the builder instead of sending it to write with no lease held.
 func Step(root, needle string) (*Action, error) {
 	snap, err := LoadSnapshot(root, needle)
 	if err != nil {
 		return nil, err
 	}
 	act, err := stepFrom(root, snap)
-	if err == nil && snap.Plan != nil {
-		takeLeases(root, snap.Plan, act)
+	if err != nil {
+		return act, err
 	}
-	return act, err
+	if snap.Plan != nil {
+		if err := takeLeases(root, snap.Plan, act); err != nil {
+			return nil, err
+		}
+	}
+	return act, nil
 }
 
 // stepFrom decides the next action for one loaded snapshot.
@@ -67,13 +73,13 @@ func stepFrom(root string, snap Snapshot) (*Action, error) {
 	if len(next.Spawns) > 0 {
 		return waveSpawn(root, snap, next), nil
 	}
-	next, tier := taskTier(snap, next)
+	tier := taskTier(snap, next)
 	return actionForTier(root, snap.Plan, next, tier), nil
 }
 
 // taskTier is the tier a task's action resolves on: its own tier key, else the role's.
-func taskTier(snap Snapshot, next Action) (Action, string) {
-	return next, snap.Tasks[next.Task].Tier
+func taskTier(snap Snapshot, next Action) string {
+	return snap.Tasks[next.Task].Tier
 }
 
 // waveSpawn resolves each spawn in a wave like a single one; a spawn that resolves to a local
@@ -83,7 +89,7 @@ func waveSpawn(root string, snap Snapshot, next Action) *Action {
 	next.Spawns = nil
 	wave := actionForTier(root, snap.Plan, next, "")
 	for _, spawn := range spawns {
-		spawn, tier := taskTier(snap, spawn)
+		tier := taskTier(snap, spawn)
 		resolved := actionForTier(root, snap.Plan, spawn, tier)
 		if resolved.Action != "spawn" {
 			return resolved
@@ -295,7 +301,7 @@ func stampReview(root string, plan *Plan) {
 }
 
 // staleReview reports whether a group commit past the base, by the author date a rebase keeps, postdates the review;
-// ship's own status-and-changelog commit is excluded, since it never invalidates a review already past it.
+// ship's own status-and-changelog commit and its credential-note commit are excluded, since neither is new work.
 func staleReview(root string, plan *Plan) bool {
 	_, path, err := ReadResultFile(root, plan.Group+"-review")
 	if err != nil {
@@ -319,9 +325,10 @@ func staleReview(root string, plan *Plan) bool {
 		return false
 	}
 	shipSubject := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	noteSubject := credentialNoteSubject(plan.Title, plan.Group)
 	for _, entry := range strings.Split(log, "\n") {
 		stamp, subject, found := strings.Cut(entry, "\t")
-		if !found || subject == shipSubject {
+		if !found || subject == shipSubject || subject == noteSubject {
 			continue
 		}
 		committed, err := time.Parse(time.RFC3339, stamp)
@@ -333,8 +340,8 @@ func staleReview(root string, plan *Plan) bool {
 	return false
 }
 
-// shipped reports whether every task in the group is closed out.
-func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
+// shipped reports whether the ledger holds a done ship entry for the group; it reads nothing else.
+func shipped(root string, plan *Plan) bool {
 	entries, err := Book(root).Read("line.jsonl")
 	if err != nil {
 		return false

@@ -21,8 +21,8 @@ import (
 	"komodo/internal/profile"
 )
 
-// GroupBudget is how long one headless group may run before the launcher kills it.
-const GroupBudget = 90 * time.Minute
+// GroupBudget is how long one headless group may run before it stops and escalates to the orchestrator.
+const GroupBudget = 60 * time.Minute
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
@@ -110,61 +110,66 @@ func drain(options Options) (int, error) {
 	var shippedGroups, parked, holding []string
 	code := 0
 	stopping := false
+	var drainErr error
 	for {
 		if !stopping {
 			// Every open group drains first, oldest start first, then each ready group in file order.
 			groups, err := drainGroups(options.Root)
 			if err != nil {
-				return 1, err
-			}
-			// A group this drain already shipped or parked is skipped, so one stuck group never holds the rest.
-			var pending, busy []backlog.Group
-			for _, group := range groups {
-				if !ran[group.ID] {
-					pending = append(pending, group)
-				}
-			}
-			for _, group := range running {
-				busy = append(busy, group)
-			}
-			// A group that waits on a parked or held group is held for the rest of the drain.
-			pending, held := conductor.Hold(pending, append(slices.Clone(parked), holding...))
-			for _, each := range held {
-				ran[each.Group.ID] = true
-				holding = append(holding, each.Group.ID)
-				fmt.Fprintf(stdout, "%s held: it depends on %s, which parked\n", each.Group.ID, each.On)
-			}
-			startable := conductor.Startable(pending, busy, capacity)
-			if len(startable) > 0 && !awaitWindow(options.Root, stdout, started.Add(total)) {
-				code = 124
+				// Every lane already running still drains below, so its result still reaches shipped or parked.
+				drainErr = err
+				code = 1
 				stopping = true
-				startable = nil
-			}
-			for _, group := range startable {
-				ran[group.ID] = true
-				remaining := total - time.Since(started)
-				if remaining <= 0 {
-					fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", group.ID, total)
+			} else {
+				// A group this drain already shipped or parked is skipped, so one stuck group never holds the rest.
+				var pending, busy []backlog.Group
+				for _, group := range groups {
+					if !ran[group.ID] {
+						pending = append(pending, group)
+					}
+				}
+				for _, group := range running {
+					busy = append(busy, group)
+				}
+				// A group that waits on a parked or held group is held for the rest of the drain.
+				pending, held := conductor.Hold(pending, append(slices.Clone(parked), holding...))
+				for _, each := range held {
+					ran[each.Group.ID] = true
+					holding = append(holding, each.Group.ID)
+					fmt.Fprintf(stdout, "%s held: it depends on %s, which parked\n", each.Group.ID, each.On)
+				}
+				startable := conductor.Startable(pending, busy, capacity)
+				if len(startable) > 0 && !awaitWindow(options.Root, stdout, started.Add(total)) {
 					code = 124
 					stopping = true
+					startable = nil
+				}
+				for _, group := range startable {
+					ran[group.ID] = true
+					remaining := total - time.Since(started)
+					if remaining <= 0 {
+						fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", group.ID, total)
+						code = 124
+						stopping = true
+						break
+					}
+					lane := options
+					lane.Target = group.ID
+					lane.Budget = min(GroupBudget, remaining)
+					lane.Executable = executable
+					running[group.ID] = group
+					go runLane(lane, finished)
+				}
+				if len(running) == 0 && !stopping {
+					fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
+					if len(parked) > 0 {
+						fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
+						code = 1
+					} else {
+						fmt.Fprintln(stdout)
+					}
 					break
 				}
-				lane := options
-				lane.Target = group.ID
-				lane.Budget = min(GroupBudget, remaining)
-				lane.Executable = executable
-				running[group.ID] = group
-				go runLane(lane, finished)
-			}
-			if len(running) == 0 && !stopping {
-				fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
-				if len(parked) > 0 {
-					fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
-					code = 1
-				} else {
-					fmt.Fprintln(stdout)
-				}
-				break
 			}
 		}
 		if len(running) == 0 {
@@ -188,29 +193,42 @@ func drain(options Options) (int, error) {
 		}
 		fmt.Fprintf(stdout, "%s shipped: %s\n", result.group, url)
 		shippedGroups = append(shippedGroups, result.group)
-		restack(options, stdout)
+		restack(options, stdout, runningGroups(running))
 	}
 	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
-	if _, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout}); err != nil {
-		return 1, err
+	_, syncErr := Sync(SyncOptions{Root: options.Root, Stdout: stdout})
+	if drainErr != nil {
+		return code, drainErr
+	}
+	if syncErr != nil {
+		return 1, syncErr
 	}
 	return code, nil
 }
 
 // restack moves each group stacked on a parent that has since merged onto its new base, printing each move;
-// a failure is printed and leaves the drain running.
-func restack(options Options, stdout io.Writer) {
+// a failure is printed and leaves the drain running. A group named in running keeps its own lane's worktree.
+func restack(options Options, stdout io.Writer, running []string) {
 	client := options.PR
 	if client == nil {
 		client = pr.New(options.Root)
 	}
-	moved, err := conductor.Restack(options.Root, client)
+	moved, err := conductor.Restack(options.Root, client, running)
 	for _, each := range moved {
 		fmt.Fprintf(stdout, "restacked %s\n", each)
 	}
 	if err != nil {
 		fmt.Fprintf(stdout, "restack: %v\n", err)
 	}
+}
+
+// runningGroups is the IDs of every group a lane is still building, so a restack never rebases their worktrees.
+func runningGroups(running map[string]backlog.Group) []string {
+	ids := make([]string, 0, len(running))
+	for id := range running {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // laneResult is how one group's lane ended: its exit code, the pull request it opened, and when it launched.

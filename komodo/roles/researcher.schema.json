@@ -27,10 +27,19 @@
       "items": {
         "type": "string"
       }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
     }
   },
   "required": [
     "answer",
-    "evidence"
+    "evidence",
+    "confidence"
   ]
 }

@@ -64,6 +64,18 @@ func TestAnAgentCarriesEveryTomlKey(t *testing.T) {
 	}
 }
 
+// TestRenderNeverWritesTheDetectCache proves building the plan is read-only: detect.Detect, not
+// detect.Load, backs the profile facetSkills reads, so listing project paths writes nothing.
+func TestRenderNeverWritesTheDetectCache(t *testing.T) {
+	root := toolkit(t)
+	if _, err := Render(root, "bin/komodo-linux-amd64"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "profile.json")); err == nil {
+		t.Fatal("Render wrote the detect cache, a side effect a plain render must not have")
+	}
+}
+
 func TestAReadOnlyRoleGetsAReadOnlySandbox(t *testing.T) {
 	root := toolkit(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
@@ -304,13 +316,6 @@ func TestConfigTomlIsNeverRendered(t *testing.T) {
 		if change.Path == filepath.Join(root, Dir, "config.toml") {
 			t.Fatal("config.toml was rendered; a project config.toml ignores model_provider and model_providers")
 		}
-	}
-}
-
-func TestHeadlessPassesAWorkspaceWriteSandbox(t *testing.T) {
-	_, args := Headless("run", "TSK-01.1.1")
-	if !contains(args, "--sandbox") || !contains(args, "workspace-write") {
-		t.Fatalf("args = %v, want a workspace-write sandbox", args)
 	}
 }
 

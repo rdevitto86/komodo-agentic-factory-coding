@@ -44,6 +44,30 @@ func refExists(root, ref string) bool {
 	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", ref).Run() == nil
 }
 
+// TestOriginLacksKillsAHungLsRemoteAndItsChildren proves a ls-remote past toolTimeout is killed,
+// process group included, so a hung origin never blocks a sweep.
+func TestOriginLacksKillsAHungLsRemoteAndItsChildren(t *testing.T) {
+	root := gitRepo(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	wrapper := "#!/bin/sh\nif [ \"$1\" = ls-remote ]; then sleep 30 & sleep 30; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fakes, "git"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := toolTimeout
+	toolTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { toolTimeout = saved })
+	started := time.Now()
+	originLacks(root, "feat/x")
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
 func TestPruneRemovesALandedDetachedWorktreeAndItsTipButNotAFreshCut(t *testing.T) {
 	root, run := pruneRepo(t, "# Backlog\n")
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -148,6 +172,69 @@ func TestPruneKeepsOnlyTheNewestRunFolders(t *testing.T) {
 		if !exists(line.RunDir(root, group)) {
 			t.Fatalf("%s's folder, one of the newest %d, was removed; done = %v", group, keptRuns, got)
 		}
+	}
+}
+
+func TestPruneDryRunLeavesEveryRunFolderInPlace(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var groups []string
+	for index := 1; index <= keptRuns+2; index++ {
+		group := fmt.Sprintf("TG-02.%d", index)
+		groups = append(groups, group)
+		state := line.RunState{Run: "r", Group: group, Base: "main", Started: start.Add(time.Duration(index) * time.Hour)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := Prune(root, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range groups {
+		if !exists(line.RunDir(root, group)) {
+			t.Fatalf("a dry run removed %s's folder; done = %v", group, got)
+		}
+	}
+	if !strings.Contains(strings.Join(got, "\n"), "would remove run folder") {
+		t.Fatalf("done = %v, want the old run folders listed", got)
+	}
+}
+
+// TestPruneNeverRemovesOutsideARunsOwnGroupDirectory proves a run.json whose group escapes its own
+// directory, such as "..", is skipped rather than handed to os.RemoveAll.
+func TestPruneNeverRemovesOutsideARunsOwnGroupDirectory(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	evil := filepath.Join(root, ".komodo", "runs", "evil")
+	if err := os.MkdirAll(evil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"run":"r","group":"..","base":"main","started":%q}`, start.Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(evil, "run.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= keptRuns; index++ {
+		group := fmt.Sprintf("TG-02.%d", index)
+		state := line.RunState{Run: "r", Group: group, Base: "main", Started: start.Add(time.Duration(index) * time.Hour)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sentinel := filepath.Join(root, ".komodo", "sentinel.txt")
+	if err := os.WriteFile(sentinel, []byte("still here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Prune(root, "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("a run.json naming %q deleted past its own directory; done = %v", "..", got)
+	}
+	if _, err := os.Stat(evil); err != nil {
+		t.Fatalf("the evil run's own folder should stay, untouched; done = %v", got)
 	}
 }
 
@@ -346,5 +433,106 @@ func TestPruneKeepsNewWorkOnABranchTheForgeReportsMerged(t *testing.T) {
 	}
 	if !exists(worktree) || !refExists(root, line.TipRef("feat/reused")) {
 		t.Fatal("unpushed work on a forge-merged branch was swept")
+	}
+}
+
+func TestGroupOfNamesTheGroupEveryStateFileBelongsTo(t *testing.T) {
+	cases := map[string]string{
+		"TSK-03.7.11.json":          "TG-03.7",
+		"TSK-03.7.11.md":            "TG-03.7",
+		"TG-03.10-review.json":      "TG-03.10",
+		"TG-07.2-fix.md":            "TG-07.2",
+		"TG-03.10-1790218115.jsonl": "TG-03.10",
+		"TG-03.6.jsonl":             "TG-03.6",
+		"line.jsonl":                "",
+		"notes.md":                  "",
+	}
+	for name, want := range cases {
+		if got := groupOf(name); got != want {
+			t.Errorf("groupOf(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestPruneSpentStateKeepsALiveGroupsFilesAndDropsTheRest(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	state := filepath.Join(root, ".komodo")
+	live := []string{"briefs/TSK-01.1.1.md", "results/TG-01.1-review.json", "line.TG-01.1-1790000000.jsonl", "line.jsonl"}
+	spent := []string{"briefs/TSK-03.7.11.md", "results/TSK-03.7.11.json", "line.TG-03.10-1790218115.jsonl"}
+	for _, rel := range append(append([]string{}, live...), spent...) {
+		write(t, state, rel, "x\n")
+	}
+	if dry := pruneSpentState(root, nil, false); len(dry) != len(spent) || !strings.HasPrefix(dry[0], "would remove") {
+		t.Fatalf("dry run = %q, want %d would-remove lines", dry, len(spent))
+	}
+	done := pruneSpentState(root, nil, true)
+	if len(done) != len(spent) {
+		t.Fatalf("done = %q, want the %d spent files removed", done, len(spent))
+	}
+	for _, rel := range spent {
+		if _, err := os.Stat(filepath.Join(state, rel)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived (%v)", rel, err)
+		}
+	}
+	for _, rel := range live {
+		if _, err := os.Stat(filepath.Join(state, rel)); err != nil {
+			t.Fatalf("%s was removed: %v; a live group's state stays", rel, err)
+		}
+	}
+}
+
+func TestPruneStashesArchivesAWeekOldStashThenDropsIt(t *testing.T) {
+	root, run := pruneRepo(t, openBacklog)
+	write(t, root, "wip.txt", "old work\n")
+	stash := exec.Command("git", "stash", "push", "-u", "-q", "-m", "old work")
+	stash.Dir = root
+	stash.Env = append(os.Environ(), "GIT_COMMITTER_DATE=2026-09-01T00:00:00Z", "GIT_AUTHOR_DATE=2026-09-01T00:00:00Z")
+	if out, err := stash.CombinedOutput(); err != nil {
+		t.Fatalf("stash: %v: %s", err, out)
+	}
+	write(t, root, "fresh.txt", "new work\n")
+	run(root, "stash", "push", "-u", "-q", "-m", "fresh work")
+	at := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	done := pruneStashes(root, at, true)
+	if len(done) != 1 || !strings.Contains(done[0], "archived") {
+		t.Fatalf("done = %q, want the old stash archived", done)
+	}
+	out, err := exec.Command("git", "-C", root, "stash", "list").Output()
+	if left := strings.TrimSpace(string(out)); err != nil || strings.Count(left, "\n") != 0 || !strings.Contains(left, "fresh work") {
+		t.Fatalf("stash list = %q, want only the fresh stash", left)
+	}
+	patches, _ := filepath.Glob(filepath.Join(root, ".komodo", "stash-archive", "2026-09-01-*.patch"))
+	if len(patches) != 1 {
+		t.Fatalf("patches = %v, want one archive", patches)
+	}
+	if body, _ := os.ReadFile(patches[0]); !strings.Contains(string(body), "old work") {
+		t.Fatalf("patch = %q, want the stash's own change", body)
+	}
+}
+
+func TestPruneRemovesTheDeadBranchClaims(t *testing.T) {
+	root := gitRepo(t)
+	claims := filepath.Join(root, ".git", "komodo-claims")
+	if err := os.MkdirAll(claims, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claims, "HEAD.json"), []byte(`{"session":"s","branch":"HEAD"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dry := pruneClaims(root, false); len(dry) != 1 || !strings.HasPrefix(dry[0], "would remove") {
+		t.Fatalf("dry run = %q, want one would-remove line", dry)
+	}
+	if _, err := os.Stat(claims); err != nil {
+		t.Fatalf("a dry run removed the claims: %v", err)
+	}
+	done := pruneClaims(root, true)
+	if _, err := os.Stat(claims); !os.IsNotExist(err) {
+		t.Fatalf("claims still present (%v); nothing reads them since the guard dropped claims", err)
+	}
+	if len(done) != 1 || !strings.Contains(done[0], "removed the dead branch claims") {
+		t.Fatalf("done = %q", done)
+	}
+	if again := pruneClaims(root, true); len(again) != 0 {
+		t.Fatalf("a second prune reported %q; with no claims it must say nothing", again)
 	}
 }

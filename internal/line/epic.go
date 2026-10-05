@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -82,11 +83,11 @@ func cutEpicBranch(root, branch string) error {
 	if err := Fetch(root, "main"); err != nil {
 		return err
 	}
-	return pushRef(root, root, "origin/main", branch)
+	return pushRef(context.Background(), root, root, "origin/main", branch)
 }
 
 // createEpicPull opens head's pull request to base as a draft, or a normal one labelled
-// status: wip where the forge refuses a draft.
+// status/wip where the forge refuses a draft.
 func createEpicPull(client *pr.Client, base, head, title, body string) (url string, draft bool, labels, warnings []string, err error) {
 	url, err = client.Create(base, head, title, body, true)
 	if err == nil {
@@ -101,7 +102,7 @@ func createEpicPull(client *pr.Client, base, head, title, body string) (url stri
 	return url, false, labels, warnings, nil
 }
 
-// labelWip adds the status: wip label the repo already defines.
+// labelWip adds the status/wip label the repo already defines.
 func labelWip(client *pr.Client, url string) (labels, warnings []string) {
 	return labelNamed(client, url, wipName)
 }
@@ -124,9 +125,9 @@ func labelNamed(client *pr.Client, url, name string) (labels, warnings []string)
 }
 
 // wipName is the label a PR carries in place of a draft the forge refused.
-const wipName = "status: wip"
+const wipName = "status/wip"
 
-// wipLabel is the repo's status: wip label, matched by its whole name before any emoji, else empty.
+// wipLabel is the repo's status/wip label, matched by its whole name before any emoji, else empty.
 func wipLabel(known []string) string {
 	return knownLabel(known, wipName)
 }

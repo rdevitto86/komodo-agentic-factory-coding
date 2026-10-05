@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `docs/backlog/` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README describes the line as it runs today. The V1 target is `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through `1.0.0-beta.2` to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
+This README is the day-to-day guide; each Design bullet points into the specs that define V1: `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through its betas to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
 
 ## Design
 
@@ -20,7 +20,7 @@ The full design lives in `docs/hld.md` and `docs/lld.md`; `docs/decisions/` hold
 - **The repo layer.** A repo may commit context, standards, skills and command overrides under `.komodo/`; see `docs/lld.md#the-repo-layer`.
 - **Detection and facets.** Cloud facet work beyond the shipped set is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
 - **Local machines.** A local model is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
-- **Hot swap.** A machine, skill or external dependency swaps without touching the line; MCP is out of scope until after 1.0.0; see `docs/lld.md#profiles-and-economy-mode` and `docs/prd.md#product-scope`.
+- **Hot swap.** A role's model swaps through its profile without touching the line; MCP is out of scope until after 1.0.0; see `docs/lld.md#profiles-and-economy-mode` and `docs/prd.md#product-scope`.
 - **The non-proprietary day.** 1.0.0 proves one host; a second host is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
 
 ## Pull requests
@@ -64,11 +64,10 @@ Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optio
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
 cd ~/komodo/ai/komodo-agentic-factory-coding
-go run ./cmd/komodo gate --install                # builds bin/komodo-<os>-<arch>, then the git hooks
-bin/komodo-<os>-<arch> install --host claude       # the one host mounted today; Codex is deferred
+go run komodo/cmd/komodo install                  # the one step: binary, git hooks, this repo, and your machine
 ```
 
-The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
+That one command builds `bin/komodo`, publishes it to `~/.komodo/bin/komodo`, which every hook runs, links `komodo` onto PATH, writes the git hooks, and installs this repo's and your user's Claude layers. It is the same on macOS, Linux and Windows. After that nothing needs rerunning: each rebuild republishes the binary, and each session start re-renders a stale layer in the background. Without Go, `install.sh` or `install.ps1` downloads and verifies a release and runs the same `komodo install`.
 
 ### Start a new repo
 
@@ -93,7 +92,7 @@ komodo run TG-03.5          # headless, one group
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
-komodo gate                 # build checks, lint, doctor, guard table, comments; pre-commit and pre-push run it here
+komodo gate                 # build checks, lint, doctor, guard table, comments; pre-commit skips tests, pre-push runs all
 ```
 
 With no target, `komodo run` drains every ready group in order: for each it builds

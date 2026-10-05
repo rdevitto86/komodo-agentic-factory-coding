@@ -59,3 +59,28 @@ func TestCompareOrdersAlphaBetaRcThenStable(t *testing.T) {
 		t.Fatal("the stable version should be latest over a beta with no rc between")
 	}
 }
+
+func TestValidAcceptsOnlyWholeVersions(t *testing.T) {
+	for version, want := range map[string]bool{
+		"1.0.0": true, "v1.0.0-beta.4": true, "1.0.0-rc.1": true,
+		"prototype-final": false, "1.0": false, "1.0.x": false, "v1.0.0 extra": false,
+	} {
+		if got := Valid(version); got != want {
+			t.Errorf("Valid(%q) = %v, want %v", version, got, want)
+		}
+	}
+}
+
+func TestCompareSortsAMalformedVersionBeforeEveryValidOne(t *testing.T) {
+	for _, bad := range []string{"1.x.0", "1.0", "1.0.0.0", "1..0", "+1.0.0", "1.+2.0"} {
+		if got := Compare(bad, "0.0.1"); got != -1 {
+			t.Errorf("Compare(%q, 0.0.1) = %d, want -1; a malformed version never reads as zeros", bad, got)
+		}
+		if got := Compare("0.0.1", bad); got != 1 {
+			t.Errorf("Compare(0.0.1, %q) = %d, want 1", bad, got)
+		}
+	}
+	if got := Compare("1.2.3", "v1.2.3"); got != 0 {
+		t.Errorf("Compare(1.2.3, v1.2.3) = %d, want 0", got)
+	}
+}

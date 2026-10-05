@@ -1,6 +1,6 @@
 # komodo-agentic-factory-coding
 
-Komodo's code assembly line: one static binary is the conveyor and devices, markdown is all a model reads, one guard is the only hook, a model is a machine mounted per host. `docs/prd.md` is the requirements, proven by command; `docs/backlog/` is the work. Out-of-task work not already a task goes in with `komodo add`.
+Komodo's code assembly line: one static binary is the conveyor and devices, markdown is all a model reads, one guard is the only hook, a model is a machine mounted per host. `docs/prd.md` is the requirements, proven by command; `docs/backlog/` is the work.
 
 ## Rules that hold here
 
@@ -11,7 +11,6 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **No MCP in 1.0.** MCPs land in a later hot-swap pass.
 - **No repo config is required;** the gate refuses only on no build check (decision 0006).
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
-- **Versions go alpha, beta, optional rc, stable,** as README defines.
 - **A pull request opens with `komodo pr create`,** its body following `.github/PULL_REQUEST_TEMPLATE.md`.
 - **The prototype is history,** at tag `prototype-final`; nothing returns without a task.
 

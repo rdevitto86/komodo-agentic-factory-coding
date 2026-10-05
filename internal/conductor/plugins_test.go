@@ -42,6 +42,28 @@ func TestANotifierGetsTheNoteAndDecidesNothing(t *testing.T) {
 	}
 }
 
+// TestPluginEnvTurnsASettingNameIntoAShellIdentifier proves a setting name with a character sh
+// cannot read in a variable name, such as a hyphen, still reaches the command under a readable one.
+func TestPluginEnvTurnsASettingNameIntoAShellIdentifier(t *testing.T) {
+	dir := t.TempDir()
+	plugins := Plugins{Dir: dir, Enabled: enabled(
+		plugin.Manifest{
+			Name: "chat", Type: plugin.Notifier, Settings: map[string]string{"api-key": "secret"},
+			Command: `printf '%s' "$KOMODO_SETTING_API_KEY" > sent`,
+		},
+	)}
+	if failures := plugins.Notify(EventBlocker, "TG-01.1", "needs a person"); len(failures) != 0 {
+		t.Fatalf("failures = %v", failures)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "sent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "secret" {
+		t.Fatalf("sent = %q, want the hyphenated setting under its sanitized name", data)
+	}
+}
+
 func TestAToolPackAddsItsCommandsToItsRolesOnly(t *testing.T) {
 	plugins := Plugins{Enabled: enabled(
 		plugin.Manifest{Name: "aws", Type: plugin.ToolPack, Roles: []string{"builder"}, Tools: []string{"aws s3 ls"}},

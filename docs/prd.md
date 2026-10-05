@@ -174,7 +174,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | Requirement ID | Requirement description | Priority | Verification proof |
 |---|---|---|---|
 | REQ-24 | Before any push, Preparation commits, runs the pre-commit and pre-push checks, rebases on the base, and runs the integration build and tests. | Must | Unit tests; the ledger shows no push before these pass. |
-| REQ-25 | Every PR opens as a draft, or with a `status: wip` label where the forge offers no drafts. It becomes ready for review only when every check and review has passed. | Must | A test for each path. |
+| REQ-25 | Every PR opens as a draft, or with a `status/wip` label where the forge offers no drafts. It becomes ready for review only when every check and review has passed. | Must | A test for each path. |
 | REQ-26 | Shipment is the only stage that uses the forge credential. It pushes only unprotected branches, then labels the PR. | Must | Unit tests; a guard table row for model sessions. |
 | REQ-27 | A missing or expired forge credential never loses work. The group stops before Ship with a blocker note, and `komodo ship` finishes it later. | Must | An eval case with the credential removed mid-run. |
 | REQ-46 | Cleanup is mechanical. The PR that finishes an epic deletes its group files, a merged group's worktree and branches are removed, `CHANGELOG.md` keeps the history, and doctor flags anything left over. | Must | Unit tests; `komodo doctor` reports each kind of leftover. |
@@ -208,7 +208,8 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | REQ-40 | The primary session can edit this repo, including its rules, skills and guard, on a branch; a change takes effect only after a human merges it. | Must | An eval case: an owner-directed edit to `komodo/policy.json` succeeds on a branch. |
 | REQ-41 | Line sessions cannot edit this PRD or the golden suite. | Must | A guard table row and a settings deny entry for each. |
 | REQ-42 | The plugin points (notifiers, tool packs, stage hooks) exist and ship disabled. | Must | `komodo doctor` lists each one as disabled. |
-| REQ-45 | Every escalation goes to the orchestrator first. What it can't settle stops the group: the conductor saves the work, writes a blocker note into the group's backlog file, publishes it as a draft PR labelled `status: blocked`, and waits for a person. A headless run exits non-zero. | Must | One test per path. |
+| REQ-45 | Every escalation goes to the orchestrator first. What it can't settle stops the group: the conductor saves the work, writes a blocker note into the group's backlog file, publishes it as a draft PR labelled `status/blocked`, and waits for a person. A headless run exits non-zero. | Must | One test per path. |
+| REQ-47 | Agents act with confidence. On a fully specified task an agent acts without asking and reports a verdict with evidence, with no hedge; it stops only for a critical ref, a remote delete, an external post, or spending money. | Must | An eval case: a fully specified group finishes with no question and no hedge in any result; `komodo lint` holds each always-on rule file to its never budget. |
 
 ### Platforms and evaluation
 

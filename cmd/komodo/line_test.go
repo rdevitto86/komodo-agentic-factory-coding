@@ -71,6 +71,25 @@ func TestWatchStatusRedrawsInPlaceUntilCancelled(t *testing.T) {
 	}
 }
 
+// TestRunStatusWatchRefusesAZeroOrNegativeInterval fails with a usage error instead of letting
+// time.NewTicker panic on an interval that cannot tick.
+func TestRunStatusWatchRefusesAZeroOrNegativeInterval(t *testing.T) {
+	root := t.TempDir()
+	for _, interval := range []string{"0", "-1s"} {
+		oldExit, code := exit, 0
+		exit = func(c int) { code = c; panic("exit") }
+		func() {
+			defer func() {
+				exit = oldExit
+				if recover() == nil || code != 1 {
+					t.Fatalf("interval %s: exit code = %d, want 1", interval, code)
+				}
+			}()
+			runStatus(root, []string{"--watch", "--interval", interval})
+		}()
+	}
+}
+
 // TestRunResumeFailsWithNoSavedState refuses a group whose run never saved a state.json.
 func TestRunResumeFailsWithNoSavedState(t *testing.T) {
 	root := t.TempDir()

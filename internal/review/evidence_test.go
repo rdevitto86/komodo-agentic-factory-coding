@@ -193,7 +193,7 @@ func TestAConventionFindingBlocksOnlyWithItsLensRuleOnAChangedLine(t *testing.T)
 func TestAPerformanceOrBlastRadiusFindingBlocksOnlyOnAValidatorMeasurement(t *testing.T) {
 	report := Report{Measurements: []Measurement{
 		{Kind: KindCallers, Passed: true, Detail: "Load: 14 references in 6 files"},
-		{Kind: KindTests, Passed: true, Detail: ""},
+		{Kind: Kind("tests"), Passed: true, Detail: "ok  komodo/internal/hooks 1.2s\nPASS"},
 	}}
 	cases := []struct {
 		name     string
@@ -203,8 +203,9 @@ func TestAPerformanceOrBlastRadiusFindingBlocksOnlyOnAValidatorMeasurement(t *te
 		why      string
 	}{
 		{"blast radius quoting the caller count", "blast-radius", "callers: Load: 14 references in 6 files", true, "callers"},
-		{"performance quoting a measurement", "performance", "Load: 14 references in 6 files, each in a loop", true, "callers"},
+		{"blast radius quoting an unrelated tests line", "blast-radius", "PASS", false, "no validator"},
 		{"a number no validator measured", "blast-radius", "Load: 40 references in 20 files", false, "no validator"},
+		{"performance has no validator that measures it", "performance", "Load: 14 references in 6 files", false, "no validator"},
 		{"no evidence", "performance", "", false, "no validator"},
 	}
 	for _, tc := range cases {

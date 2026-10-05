@@ -431,11 +431,14 @@ func TestEveryActionNamesItsResolvedParts(t *testing.T) {
 	}
 }
 
-// noKomodoRepo writes only a backlog for the text given, so the toolkit falls back to the
-// embedded komodo/ tree for its roles, skills, and facets, unlike stepRepo's own overrides.
+// noKomodoRepo is a real git repo holding only a backlog for the text given, so the toolkit falls
+// back to the embedded komodo/ tree for its roles, skills, and facets, unlike stepRepo's own overrides.
 func noKomodoRepo(t *testing.T, text string) string {
 	t.Helper()
 	root := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
 	backlogtest.SeedText(t, root, text)
 	return root
 }
@@ -1438,7 +1441,7 @@ func builderMachine(t *testing.T, root string) (string, string) {
 
 func TestAOneFileTaskNeverBuildsOnLight(t *testing.T) {
 	for _, files := range []string{"files: [a/one.go]\n", "files: [a/one.go, a/one_test.go]\n"} {
-		root := tieredRepo(t, files, `{"light_builder": true}`)
+		root := tieredRepo(t, files, `{"max_parallel": 1}`)
 		machine, why := builderMachine(t, root)
 		if machine != "vendora/sonnet" || strings.Contains(why, "light") {
 			t.Fatalf("machine = %q, why = %q; a small task builds on the builder's own tier, never light", machine, why)

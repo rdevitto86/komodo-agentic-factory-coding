@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,27 @@ import (
 	"komodo/internal/guard"
 	"komodo/internal/mount"
 )
+
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns what it wrote.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = old
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
 
 // repoWith builds a worktree holding files, with its own .git so no walk up reaches the real one.
 func repoWith(t *testing.T, files map[string]string) string {
@@ -93,6 +115,68 @@ func TestTheReviewerIsAllowedOnlyReadsAndReadOnlyGit(t *testing.T) {
 	}
 }
 
+// TestTheFilesClassNeverAllowsFind proves find never reaches the rendered allow list: its -exec,
+// -execdir and -delete flags would turn a fixed command class into a general shell.
+func TestTheFilesClassNeverAllowsFind(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Tools: []string{"read", "edit", "write", "shell", "search"}}
+	allow, _ := rolePermissions(t.TempDir(), goRepo(t), req)
+	if slices.Contains(allow, "Bash(find:*)") {
+		t.Fatalf("allow = %v; find -exec can run any command the allow list does not name", allow)
+	}
+}
+
+// TestAReviewerWithAShellIsDeniedGitReadsThatWriteAFile proves git diff, log and show cannot
+// carry --output, the one flag that turns the reviewer's read-only git into a write.
+func TestAReviewerWithAShellIsDeniedGitReadsThatWriteAFile(t *testing.T) {
+	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read", "search"}}
+	_, deny := rolePermissions(t.TempDir(), goRepo(t), req)
+	for _, rule := range []string{"Bash(git diff --output:*)", "Bash(git log --output:*)", "Bash(git show --output:*)"} {
+		if !slices.Contains(deny, rule) {
+			t.Fatalf("deny = %v, missing %q", deny, rule)
+		}
+	}
+	for _, exploit := range []string{"git diff --output=notes.txt", "git log --output=notes.txt", "git show --output=notes.txt"} {
+		if !denyPrefixMatches(deny, exploit) {
+			t.Fatalf("deny = %v does not stop %q, a write through a read-only role's git", deny, exploit)
+		}
+	}
+}
+
+// denyPrefixMatches reports whether any Bash(prefix:*) deny rule's prefix starts command.
+func denyPrefixMatches(deny []string, command string) bool {
+	for _, rule := range deny {
+		prefix, ok := strings.CutPrefix(rule, shellTool+"(")
+		if !ok {
+			continue
+		}
+		prefix = strings.TrimSuffix(strings.TrimSuffix(prefix, ")"), ":*")
+		if strings.HasPrefix(command, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRolePermissionsLogsWhenDetectionFindsNothing proves a worktree detection cannot read leaves
+// a trace on stderr, instead of silently rendering only the role's fixed command classes.
+func TestRolePermissionsLogsWhenDetectionFindsNothing(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Tools: []string{"read", "edit", "write", "shell", "search"}}
+	empty := repoWith(t, map[string]string{})
+	output := captureStderr(t, func() {
+		rolePermissions(t.TempDir(), empty, req)
+	})
+	if !strings.Contains(output, "detects no language or manifest") {
+		t.Fatalf("stderr = %q, want a trace naming the empty detection", output)
+	}
+
+	output = captureStderr(t, func() {
+		rolePermissions(t.TempDir(), goRepo(t), req)
+	})
+	if output != "" {
+		t.Fatalf("stderr = %q, want silence once detection finds a manifest", output)
+	}
+}
+
 // TestABuilderWithAShellIsDeniedBranchPinningGitCalls proves a builder never runs the git calls
 // that move or pin a branch; only komodo worktree add does (decision 0012).
 func TestABuilderWithAShellIsDeniedBranchPinningGitCalls(t *testing.T) {
@@ -132,8 +216,11 @@ func TestEveryLineRoleIsDeniedThePRDTheGoldenSuiteAndThePolicy(t *testing.T) {
 }
 
 func TestARoleNamingCommandClassesRunsThemInAShellItDoesNotDeclare(t *testing.T) {
-	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read", "search"}, Schema: []byte(`{}`)}
-	argv, _, _ := Session(t.TempDir(), goRepo(t), req, "", "", "m", "", 10, 0)
+	req := mount.StartRequest{Role: "reviewer", Brief: "b", Tools: []string{"read", "search"}, Schema: []byte(`{}`)}
+	argv, _, _, err := Session(sandboxedSessionRoot(t), goRepo(t), req, "", "", "m", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 	for _, want := range []string{"--tools Read, Grep, Glob, Bash", "Bash(git diff:*)", "Bash(git commit:*)"} {
 		if !strings.Contains(joined, want) {

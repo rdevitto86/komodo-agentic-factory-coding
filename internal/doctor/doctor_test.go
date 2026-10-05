@@ -78,6 +78,27 @@ func TestACleanRepoHasNoProblems(t *testing.T) {
 	}
 }
 
+// TestAMalformedRepoConfigIsFound proves doctor names a present policy or labels file its reader
+// refuses, and stays quiet when both are absent.
+func TestAMalformedRepoConfigIsFound(t *testing.T) {
+	root := t.TempDir()
+	if got := checkConfig(root); len(got) != 0 {
+		t.Fatalf("absent configs = %+v, want nothing", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{filepath.Join(".komodo", "policy.json"), filepath.Join(".komodo", "labels.json")} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(`{"not_a_field": 1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := checkConfig(root)
+	if len(got) != 2 || got[0].Check != "config" || got[1].Check != "config" {
+		t.Fatalf("problems = %+v, want one config problem per file", got)
+	}
+}
+
 func TestAMalformedOverlayIsFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -92,7 +113,7 @@ func TestAMalformedOverlayIsFound(t *testing.T) {
 			t.Fatalf("an empty overlay %q = %+v, want nothing", body, got)
 		}
 	}
-	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`} {
+	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`, `{"not_a_field": 1}`, `{} junk`} {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -262,6 +283,19 @@ func TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes(t *testing.T)
 	}
 }
 
+// TestTheAlwaysOnBudgetCountsAHostNotYetInstalled proves a fresh clone, where no host is installed yet,
+// still sums the skills every host would render, so the gate catches an overrun before any install.
+func TestTheAlwaysOnBudgetCountsAHostNotYetInstalled(t *testing.T) {
+	root := clean(t)
+	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
+	host := hostRenderingSkills(root, map[string]string{"standards-huge": huge})
+	host.Installed = func(string) bool { return false }
+	registerHost(t, host)
+	if got := problemsFrom(t, root)["budgets"]; !alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a host not installed yet must still count toward the always-on total", got)
+	}
+}
+
 func TestARolesScopedSkillIsNoPartOfTheAlwaysOnBudget(t *testing.T) {
 	root := clean(t)
 	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
@@ -293,7 +327,7 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	}
 }
 
-func TestAHookNamingAMissingBinaryIsFoundAndAnotherKomodoCopyIsNotDrift(t *testing.T) {
+func TestAHookNamingAMissingBinaryIsFoundAndIsDrift(t *testing.T) {
 	root := clean(t)
 	gone, _ := json.Marshal(filepath.Join(root, "gone", "komodo") + " guard")
 	write(t, root, "settings.json", `{"command": `+string(gone)+`}`)
@@ -303,8 +337,8 @@ func TestAHookNamingAMissingBinaryIsFoundAndAnotherKomodoCopyIsNotDrift(t *testi
 		return plan, nil
 	}})
 	found := problemsFrom(t, root)
-	if len(found["drift"]) != 0 {
-		t.Fatalf("drift = %+v; another komodo copy is not drift", found["drift"])
+	if got := found["drift"]; len(got) != 1 || got[0].Where != "settings.json" {
+		t.Fatalf("drift = %+v; a hook naming any binary but the rendered one is drift", got)
 	}
 	if got := found["hook"]; len(got) != 1 || got[0].Where != "settings.json" || !strings.Contains(got[0].Detail, "does not exist") {
 		t.Fatalf("hook = %+v", got)
@@ -418,6 +452,15 @@ func TestAGitattributesWithoutEollfIsFound(t *testing.T) {
 func TestAGitattributesWithProperEollfPasses(t *testing.T) {
 	root := clean(t)
 	write(t, root, ".gitattributes", "* text=auto eol=lf\n")
+	got := problemsFrom(t, root)["gitattributes"]
+	if len(got) != 0 {
+		t.Fatalf("gitattributes = %+v, want none", got)
+	}
+}
+
+func TestAGitattributesWithATabBeforeEollfPasses(t *testing.T) {
+	root := clean(t)
+	write(t, root, ".gitattributes", "*\ttext=auto eol=lf\n")
 	got := problemsFrom(t, root)["gitattributes"]
 	if len(got) != 0 {
 		t.Fatalf("gitattributes = %+v, want none", got)
@@ -832,12 +875,26 @@ func TestAForgeThatOffersNoRulesetsIsANoteNotAProblem(t *testing.T) {
 		t.Fatalf("problems = %+v; a forge with no rulesets to offer is a warning", problems)
 	}
 	notes := ForgeNotes(t.TempDir(), unoffered)
-	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status/wip") {
 		t.Fatalf("notes = %v, want a warning for rulesets and one for drafts", notes)
 	}
 	offered := func(_ string, args ...string) (string, error) { return `[]`, nil }
 	if notes := ForgeNotes(t.TempDir(), offered); len(notes) != 0 {
 		t.Fatalf("notes = %v; a forge that offers rulesets and drafts has nothing to warn of", notes)
+	}
+}
+
+func TestABareHTTP403StillReportsAProblem(t *testing.T) {
+	scopeless := func(_ string, args ...string) (string, error) {
+		return "", errors.New("gh: Resource not accessible by integration (HTTP 403)")
+	}
+	problems := CheckRulesets(t.TempDir(), "main", scopeless)
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "could not list rulesets") {
+		t.Fatalf("problems = %+v; a scopeless or unauthorised-SSO 403 must still be a problem", problems)
+	}
+	notes := ForgeNotes(t.TempDir(), scopeless)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v; a bare 403 is a problem, not a plan note", notes)
 	}
 }
 
@@ -859,7 +916,7 @@ func TestARemoteAuditWarnsOfAForgeWithNoRulesets(t *testing.T) {
 	if _, err := Run(clean(t), options); err != nil {
 		t.Fatal(err)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status/wip") {
 		t.Fatalf("notes = %v; a remote audit must warn of a forge with no rulesets or drafts", notes)
 	}
 }
@@ -1115,7 +1172,42 @@ func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
 		t.Fatalf("states = %q", got)
 	}
 	write(t, home, ".komodo/plugins.json", `{"enabled":["cloud"]}`)
-	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled" {
+	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled here, but 1.0 runs no plugin" {
 		t.Fatalf("states = %q", got)
+	}
+}
+
+func TestAStaleGlobalLayerFailsDoctorAndWarnsTheGate(t *testing.T) {
+	root := clean(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	marker := filepath.Join(home, ".globalhost", "rendered")
+	settings := filepath.Join(home, ".globalhost", "settings.json")
+	write(t, home, ".globalhost/rendered", "")
+	write(t, home, ".globalhost/settings.json", `{"command": "/old/komodo-0123456789ab guard"}`)
+	registerHost(t, mount.Host{Name: "globalhost", Render: func(root, _ string) (install.Plan, error) {
+		return install.Plan{Host: "globalhost", Root: root}, nil
+	}})
+	install.RegisterGlobal("globalhost", func(_, home, _ string) (install.Plan, error) {
+		plan := install.Plan{Host: "globalhost", Root: home, Marker: marker, Fix: "komodo install --global"}
+		plan.Add(settings, []byte(`{"command": "/home/.komodo/bin/komodo guard"}`), "the guard")
+		return plan, nil
+	})
+	found := problemsFrom(t, root)
+	if got := found["global"]; len(got) != 1 || got[0].Where != settings || !strings.Contains(got[0].Detail, "komodo install --global") {
+		t.Fatalf("global = %+v; a stale global hook must fail doctor and name the fix", got)
+	}
+	var warned []string
+	problems, err := Run(root, Options{NoGit: true, RepoOnly: true, Warn: func(note string) { warned = append(warned, note) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, problem := range problems {
+		if problem.Check == "global" {
+			t.Fatalf("problems = %+v; the gate must never fail on the machine's global layer", problems)
+		}
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], settings) {
+		t.Fatalf("warned = %q, want the stale global settings named", warned)
 	}
 }

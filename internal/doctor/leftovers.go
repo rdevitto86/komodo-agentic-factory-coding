@@ -18,7 +18,7 @@ func Leftovers(root string) []string {
 	open := openGroups(files)
 	notes := endedEpicFiles(root, paths, files)
 	notes = append(notes, oldHarnessLeftovers(root)...)
-	worktrees, named := orphanWorktrees(root, open)
+	worktrees, named := orphanWorktrees(root, open, openEpicBranches(files))
 	notes = append(notes, worktrees...)
 	return append(notes, orphanBranches(root, open, named)...)
 }
@@ -76,6 +76,10 @@ func endedEpicFiles(root string, paths []string, files map[string]backlog.GroupF
 		for _, task := range file.Tasks {
 			running[file.EpicID] = running[file.EpicID] || !task.Done
 		}
+		// A file with no parsed task or a parse problem may hide open work, so its epic stays open.
+		if len(file.Problems) > 0 || len(file.Tasks) == 0 {
+			running[file.EpicID] = true
+		}
 	}
 	var notes []string
 	for _, path := range paths {
@@ -83,14 +87,34 @@ func endedEpicFiles(root string, paths []string, files map[string]backlog.GroupF
 		if !ok || file.EpicID == "" || running[file.EpicID] {
 			continue
 		}
-		notes = append(notes, rel(root, path)+": "+file.EpicID+" has ended; komodo sync opens its cleanup PR")
+		notes = append(notes, rel(root, path)+": "+file.EpicID+" has ended; once it reaches the default branch, komodo sync opens its cleanup PR")
 	}
 	return notes
 }
 
-// orphanWorktrees names each worktree under the main checkout's .komodo/wt that no open group owns,
-// returning the notes and the branches they name.
-func orphanWorktrees(root string, open map[string]bool) ([]string, map[string]bool) {
+// cleanupPrefix names sync's own transient worktree, cleanup-<epic>, which never outlives its PR.
+const cleanupPrefix = "cleanup-"
+
+// openEpicBranches is the branch each epic with an open task ships on.
+func openEpicBranches(files map[string]backlog.GroupFile) map[string]bool {
+	epics := map[string]bool{}
+	for _, file := range files {
+		if file.EpicID == "" || file.Version == "" {
+			continue
+		}
+		for _, task := range file.Tasks {
+			if !task.Done {
+				epics["feat/"+file.Version] = true
+				break
+			}
+		}
+	}
+	return epics
+}
+
+// orphanWorktrees names each worktree under the main checkout's .komodo/wt that no open group or epic
+// branch owns, skipping sync's own cleanup-* ones, returning the notes and the branches they name.
+func orphanWorktrees(root string, open, epics map[string]bool) ([]string, map[string]bool) {
 	named := map[string]bool{}
 	worktrees, err := git.Worktrees(root)
 	if err != nil {
@@ -104,10 +128,17 @@ func orphanWorktrees(root string, open map[string]bool) ([]string, map[string]bo
 			continue
 		}
 		path := filepath.Clean(current.Path)
-		if !strings.HasPrefix(path, parked) || open[filepath.Base(path)] {
+		if !strings.HasPrefix(path, parked) || open[filepath.Base(path)] || strings.HasPrefix(filepath.Base(path), cleanupPrefix) {
 			continue
 		}
 		branch := TrackedOf(current)
+		if branch == "" {
+			notes = append(notes, current.Path+" detached: no open group owns this worktree")
+			continue
+		}
+		if epics[branch] {
+			continue
+		}
 		named[branch] = true
 		notes = append(notes, current.Path+" on branch "+branch+": no open group owns this worktree")
 	}

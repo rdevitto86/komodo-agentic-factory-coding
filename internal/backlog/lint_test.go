@@ -202,19 +202,19 @@ func TestLintAcceptsAGroupWhoseBaseIsItsOwnEpicBranch(t *testing.T) {
 		"#### [TSK-53.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
 	problems := Lint(Parse(text))
 	for _, problem := range problems {
-		if strings.Contains(problem, "TG-53.1") && strings.Contains(problem, "neither main") {
+		if strings.Contains(problem, "TG-53.1") && strings.Contains(problem, "neither its epic branch") {
 			t.Fatalf("base naming the group's own epic branch should not produce an error; got %q", problem)
 		}
 	}
 }
 
 func TestLintRejectsAGroupWhoseBaseNamesAnotherEpicsBranch(t *testing.T) {
-	text := "### [TG-54.1] Base on a different epic's branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/v2.0.0\n```\n\n" +
+	text := "### [TG-54.1] Base on a different epic's branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/2.0.0\n```\n\n" +
 		"#### [TSK-54.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
 	problems := Lint(Parse(text))
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "TG-54.1") && strings.Contains(problem, "neither main") {
+		if strings.Contains(problem, "TG-54.1") && strings.Contains(problem, "neither its epic branch") {
 			found = true
 			break
 		}
@@ -337,6 +337,21 @@ func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("want a no-version problem; got %v", problems)
+	}
+}
+
+func TestLintGroupFileRejectsAMissingType(t *testing.T) {
+	file := ParseGroupFile("## [TG-62.1] No type [P: H] [READY]\n\n```yaml\nversion: 1.0.0\nepic: EPIC-62\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-62.1.1** A task\n  - files: `a.go`\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-62.1": true}, map[string]bool{"TSK-62.1.1": true}, nil)
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "no type") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a no-type problem; got %v", problems)
 	}
 }
 
@@ -531,6 +546,28 @@ func TestLintGroupFileEpicsReportsOneProblemPerEpic(t *testing.T) {
 	}
 }
 
+// TestLintGroupFileDuplicatesReportsEachDuplicateIDAcrossFiles proves two files declaring the
+// same group id, or two tasks sharing a task id, each name a duplicate.
+func TestLintGroupFileDuplicatesReportsEachDuplicateIDAcrossFiles(t *testing.T) {
+	first := ParseGroupFile("## [TG-68.1] First [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-68\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-68.1.1** A task\n  - files: `a.go`\n")
+	second := ParseGroupFile("## [TG-68.1] Duplicate group id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-68\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-68.1.1** Duplicate task id\n  - files: `b.go`\n")
+	problems := LintGroupFileDuplicates([]GroupFile{first, second})
+	group, task := false, false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-68.1") && strings.Contains(problem, "duplicate group id") {
+			group = true
+		}
+		if strings.Contains(problem, "TSK-68.1.1") && strings.Contains(problem, "duplicate task id") {
+			task = true
+		}
+	}
+	if !group || !task {
+		t.Fatalf("want a duplicate group id and a duplicate task id problem; got %v", problems)
+	}
+}
+
 func TestSlugMatchesGitHubOnANumberedHeading(t *testing.T) {
 	if got := Slug("6.1 X"); got != "61-x" {
 		t.Fatalf("Slug(%q) = %q, want %q", "6.1 X", got, "61-x")
@@ -606,6 +643,23 @@ func TestLintAcceptsAStableVersionWhoseEpicHadNoRc(t *testing.T) {
 	for _, problem := range problems {
 		if strings.Contains(problem, "TG-57.1") || strings.Contains(problem, "TG-58.1") {
 			t.Fatalf("a beta group followed by a stable group with no rc should lint cleanly; got %v", problems)
+		}
+	}
+}
+
+// TestLintGroupFileRefusesAProofThatOnlyChecksAFileExists proves a READY task cannot pass on test -f,
+// which holds before the change as well as after.
+func TestLintGroupFileRefusesAProofThatOnlyChecksAFileExists(t *testing.T) {
+	head := "## [TG-63.1] Proofs [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: []\n```\n\n"
+	weak := ParseGroupFile(head + "- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n  - done_when: `test -f a.go`\n")
+	problems := LintGroupFile(".", weak, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true}, nil)
+	if !strings.Contains(strings.Join(problems, "\n"), "only checks that a file exists") {
+		t.Fatalf("problems = %v, want the existence-only proof refused", problems)
+	}
+	real := ParseGroupFile(head + "- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n  - done_when: `test -f a.go`, `go test ./...`\n")
+	for _, problem := range LintGroupFile(".", real, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true}, nil) {
+		if strings.Contains(problem, "only checks that a file exists") {
+			t.Fatalf("problem = %q; a real command beside test -f is a proof", problem)
 		}
 	}
 }

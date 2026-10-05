@@ -1,6 +1,8 @@
 package profile
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,6 +185,56 @@ func TestAMissingOverlayChangesNothing(t *testing.T) {
 	}
 }
 
+// TestOverlayPanicsOnAMalformedFileNamingItsPath proves a present but broken overlay fails
+// loudly instead of silently leaving the profile unchanged.
+func TestOverlayPanicsOnAMalformedFileNamingItsPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a malformed overlay did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(r), path) {
+			t.Fatalf("panic = %v, want it to name %s", r, path)
+		}
+	}()
+	Overlay(before, path)
+}
+
+// TestOverlayRejectsAnUnknownField proves the decode is strict, not merely tolerant of bad JSON.
+func TestOverlayRejectsAnUnknownField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"not_a_real_field":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unknown overlay field did not panic")
+		}
+	}()
+	Overlay(before, path)
+}
+
+// TestOverlayAcceptsAFieldAnotherReaderOwns proves the overlay's one shape lets a profile-only
+// field share a config.json with a mount-only field, neither tripping the other's decode.
+func TestOverlayAcceptsAFieldAnotherReaderOwns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"local":true,"max_parallel":1,"critical_refs":["release"]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	got := Overlay(before, path)
+	if got.MaxParallel != 1 || len(got.CriticalRefs) != 1 || got.CriticalRefs[0] != "release" {
+		t.Fatalf("overlay = %+v, want the mount-only field to pass through unnoticed", got)
+	}
+}
+
 func TestSelectNeedsTheOverlaySwitchAsWellAsAnAnsweringServer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -339,6 +391,45 @@ func TestNoMountInstalledStillLoadsTheFullModeRoles(t *testing.T) {
 	}
 }
 
+func TestAMalformedModeProfileNamesTheLoadErrorInWhy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "profiles", "full.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host := fakeHost("h", true, mount.Usage{}, false)
+	got := SelectWith(root, []mount.Host{host}, false, false)
+	if got.Roles != nil {
+		t.Fatalf("roles = %+v, want nil since the profile never loaded", got.Roles)
+	}
+	if !strings.Contains(got.Why, "did not load") {
+		t.Fatalf("why = %q, want the load error named", got.Why)
+	}
+}
+
+func TestAMissingProfilesDirectoryNamesTheLoadErrorInWhy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host := fakeHost("h", true, mount.Usage{}, false)
+	got := SelectWith(root, []mount.Host{host}, false, false)
+	if got.Roles != nil {
+		t.Fatalf("roles = %+v, want nil since komodo/ holds no profiles/", got.Roles)
+	}
+	if !strings.Contains(got.Why, "did not load") {
+		t.Fatalf("why = %q, want the load error named", got.Why)
+	}
+}
+
 func TestBaseCarriesThePullRequestSizeCeilings(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if got.PRFiles != 20 || got.PRLinesPreferred != 1000 || got.PRLinesMax != 2000 {
@@ -350,5 +441,31 @@ func TestAnUnknownRoleHasNoMachine(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if _, ok := got.Machine("nobody"); ok {
 		t.Fatal("a role the profile does not name must have no machine")
+	}
+}
+
+// TestEveryShippedProfileNamesTheConductorsRoles proves each shipped profile gives the builder and
+// the escalation session a machine, so a renamed role never starts a session with no model.
+func TestEveryShippedProfileNamesTheConductorsRoles(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "komodo", "profiles", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("profiles = %v, %v", paths, err)
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var shipped struct {
+			Roles map[string]RoleProfile `json:"roles"`
+		}
+		if err := json.Unmarshal(data, &shipped); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		for _, role := range []string{"builder", "escalation"} {
+			if _, ok := shipped.Roles[role]; !ok {
+				t.Errorf("%s names no %s machine", filepath.Base(path), role)
+			}
+		}
 	}
 }

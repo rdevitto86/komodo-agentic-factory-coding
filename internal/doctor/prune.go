@@ -1,21 +1,28 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/install"
 	"komodo/internal/lease"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
 
-// keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
+// keptRuns is how many run folders Prune keeps, the newest by start.
 const keptRuns = 10
 
 // idleFor is how long a worktree's git state must sit unchanged before its pushed work alone lets prune take it.
@@ -39,11 +46,17 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
+		if !confirm {
+			done = append(done, "would remove vanished worktree "+rel(root, path))
+			continue
+		}
 		if _, err := git.Run(root, "worktree", "remove", "--force", path); err == nil {
 			done = append(done, "removed worktree "+rel(root, path))
 		}
 	}
-	if _, err := git.Run(root, "worktree", "prune"); err == nil {
+	if !confirm {
+		done = append(done, "would prune the worktree list")
+	} else if _, err := git.Run(root, "worktree", "prune"); err == nil {
 		done = append(done, "pruned the worktree list")
 	}
 	open := line.OpenRuns(root)
@@ -56,8 +69,169 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		}
 		done = append(done, "merged local branch "+branch+"; komodo never deletes it, run git branch -d "+branch+" to")
 	}
-	done = append(done, pruneRuns(root, open)...)
+	done = append(done, pruneRuns(root, open, confirm)...)
+	done = append(done, pruneSpentState(root, open, confirm)...)
+	done = append(done, pruneStashes(root, now(), confirm)...)
+	done = append(done, pruneHookCopies(root, confirm)...)
+	done = append(done, pruneClaims(root, confirm)...)
 	return done, nil
+}
+
+// spentDirs are the state folders that hold one file per task or group: briefs and results.
+var spentDirs = []string{"briefs", "results"}
+
+// pruneSpentState deletes briefs, results and run archives of each group with no run folder, open run or
+// group file; an unreadable backlog deletes nothing.
+func pruneSpentState(root string, open []line.RunState, confirm bool) []string {
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		return nil
+	}
+	live := map[string]bool{}
+	for _, group := range parsed.Groups {
+		live[group.ID] = true
+	}
+	for _, state := range append(line.LoadRuns(root), open...) {
+		live[state.Group] = true
+	}
+	var spent []string
+	state := filepath.Join(root, line.StateDir)
+	for _, dir := range spentDirs {
+		entries, _ := os.ReadDir(filepath.Join(state, dir))
+		for _, entry := range entries {
+			if group := groupOf(entry.Name()); group != "" && !live[group] {
+				spent = append(spent, filepath.Join(state, dir, entry.Name()))
+			}
+		}
+	}
+	archives, _ := filepath.Glob(filepath.Join(state, "line.*.jsonl"))
+	for _, archive := range archives {
+		if group := groupOf(strings.TrimPrefix(filepath.Base(archive), "line.")); group != "" && !live[group] {
+			spent = append(spent, archive)
+		}
+	}
+	var done []string
+	for _, path := range spent {
+		if !confirm {
+			done = append(done, "would remove "+rel(root, path)+", state of a group the line no longer records")
+			continue
+		}
+		if err := os.RemoveAll(path); err == nil {
+			done = append(done, "removed "+rel(root, path))
+		}
+	}
+	return done
+}
+
+// runSuffix is the start time a run id appends to its group id.
+var runSuffix = regexp.MustCompile(`-\d+$`)
+
+// groupOf is the group id a state file's name carries through a task, group or run id, else "".
+func groupOf(name string) string {
+	for _, ext := range []string{".jsonl", ".json", ".md"} {
+		name = strings.TrimSuffix(name, ext)
+	}
+	if task, ok := strings.CutPrefix(name, "TSK-"); ok {
+		if cut := strings.LastIndex(task, "."); cut > 0 {
+			return "TG-" + task[:cut]
+		}
+		return ""
+	}
+	if !strings.HasPrefix(name, "TG-") {
+		return ""
+	}
+	name = runSuffix.ReplaceAllString(name, "")
+	if id, _, found := strings.Cut(name[len("TG-"):], "-"); found {
+		return "TG-" + id
+	}
+	return name
+}
+
+// stashAge is how old a stash grows before the sweep archives it as a patch and drops it.
+const stashAge = 7 * 24 * time.Hour
+
+// pruneStashes writes each stash older than stashAge to .komodo/stash-archive as a patch, then drops it;
+// a stash whose patch cannot be written stays.
+func pruneStashes(root string, at time.Time, confirm bool) []string {
+	list := lines(git.Run(root, "stash", "list", "--format=%gd %ct %H"))
+	var done []string
+	// Dropping from the highest index down keeps every lower stash@{n} pointing where it did.
+	for index := len(list) - 1; index >= 0; index-- {
+		fields := strings.Fields(list[index])
+		if len(fields) != 3 {
+			continue
+		}
+		seconds, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil || at.Sub(time.Unix(seconds, 0)) < stashAge {
+			continue
+		}
+		patch := filepath.Join(root, line.StateDir, "stash-archive", time.Unix(seconds, 0).UTC().Format("2006-01-02")+"-"+fields[2][:12]+".patch")
+		if !confirm {
+			done = append(done, "would archive "+fields[0]+" to "+rel(root, patch)+" and drop it")
+			continue
+		}
+		body, err := git.Run(root, "stash", "show", "-p", "--include-untracked", fields[2])
+		if err != nil {
+			continue
+		}
+		if err := fsx.WriteFile(patch, []byte(body+"\n"), 0o644); err != nil {
+			continue
+		}
+		if _, err := git.Run(root, "stash", "drop", "--quiet", fields[0]); err == nil {
+			done = append(done, "archived "+fields[0]+" to "+rel(root, patch)+" and dropped it")
+		}
+	}
+	return done
+}
+
+// pruneHookCopies deletes the hook binary copies earlier installs left, keeping any an installed hook still runs.
+func pruneHookCopies(root string, confirm bool) []string {
+	keep := map[string]bool{}
+	for _, host := range renderInstalled(root, func() func() { return func() {} }) {
+		for _, change := range host.Plan.Changes {
+			installed, err := os.ReadFile(change.Path)
+			if err != nil {
+				continue
+			}
+			for _, binary := range install.HookBinaries(installed) {
+				keep[filepath.Clean(binary)] = true
+			}
+		}
+	}
+	if !confirm {
+		return nil
+	}
+	removed, err := mount.PruneHookCopies(keep)
+	if err != nil {
+		return []string{"could not prune old hook binaries: " + err.Error()}
+	}
+	var done []string
+	for _, path := range removed {
+		done = append(done, "removed old hook binary "+path)
+	}
+	return done
+}
+
+// claimsDir is where the guard kept branch claims until they were removed; nothing reads it now.
+const claimsDir = "komodo-claims"
+
+// pruneClaims deletes the shared git dir's dead branch-claim directory; unconfirmed, it lists it.
+func pruneClaims(root string, confirm bool) []string {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(common, claimsDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if !confirm {
+		return []string{"would remove the dead branch claims at " + dir + "; rerun with --confirm to delete"}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return []string{"could not remove the dead branch claims at " + dir + ": " + err.Error()}
+	}
+	return []string{"removed the dead branch claims at " + dir}
 }
 
 // settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.
@@ -200,17 +374,31 @@ func squashLanded(root, branch, tip, pushed string) bool {
 	return mergedOnForge(root, branch)
 }
 
-// originLacks reports whether origin answers and holds no branch of that name.
+// originLacks reports whether origin answers and holds no branch of that name; a hung ls-remote
+// is killed, process group included, once toolTimeout passes.
 func originLacks(root, branch string) bool {
-	cmd := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", branch)
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "origin", branch)
 	cmd.Dir = root
+	cmd.Env = git.WithoutRepoPointers(os.Environ())
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
 	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	var exit *exec.ExitError
 	return errors.As(err, &exit) && exit.ExitCode() == 2
 }
 
-// pruneRuns removes every run folder older than the newest keptRuns, never an open run's.
-func pruneRuns(root string, open []line.RunState) []string {
+// pruneRuns removes every run folder older than the newest keptRuns, never an open run's; unconfirmed, it lists them.
+func pruneRuns(root string, open []line.RunState, confirm bool) []string {
 	runs := line.LoadRuns(root)
 	if len(runs) <= keptRuns {
 		return nil
@@ -221,10 +409,14 @@ func pruneRuns(root string, open []line.RunState) []string {
 	}
 	var done []string
 	for _, state := range runs[:len(runs)-keptRuns] {
-		if running[state.Group] {
+		if running[state.Group] || !line.PlainGroup(state.Group) {
 			continue
 		}
 		dir := line.RunDir(root, state.Group)
+		if !confirm {
+			done = append(done, "would remove run folder "+rel(root, dir))
+			continue
+		}
 		if err := os.RemoveAll(dir); err == nil {
 			done = append(done, "removed run folder "+rel(root, dir))
 		}

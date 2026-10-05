@@ -31,25 +31,19 @@ func VerifyCommand(root, worktree string) string {
 	return ""
 }
 
-// overrideCommands reads the root's commands file only; the worktree's copy is gitignored
-// and unguarded, so it never sets verify, compile, before_review, or after_publish.
-func overrideCommands(root, _ string) repopkg.Commands {
-	return repopkg.LoadCommands(root)
-}
-
 // BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
 func BeforeReviewCommand(root, worktree string) string {
-	return overrideCommands(root, worktree).BeforeReview
+	return repopkg.LoadCommands(root).BeforeReview
 }
 
 // AfterPublishCommand is the repo's own command to run once a group has shipped.
 func AfterPublishCommand(root, worktree string) string {
-	return overrideCommands(root, worktree).AfterPublish
+	return repopkg.LoadCommands(root).AfterPublish
 }
 
 // CompileCommands are QC's cheap whole-tree checks: a commands file override, else the worktree's manifests, else the root's profile.
 func CompileCommands(root, worktree string) []string {
-	if override := overrideCommands(root, worktree).Compile; override != "" {
+	if override := repopkg.LoadCommands(root).Compile; override != "" {
 		return []string{override}
 	}
 	commands := manifestCompiles(worktree)

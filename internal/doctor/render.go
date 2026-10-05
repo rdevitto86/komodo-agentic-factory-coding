@@ -100,12 +100,36 @@ type renderedHost struct {
 func renderInstalled(root string, pin func() func()) []renderedHost {
 	defer freezeProfile(root)()
 	defer pin()()
+	out := renderProject(root, true)
+	// The user's global layer drifts too: a stale hook there runs on every session, in every repo.
+	for _, host := range mount.Active() {
+		if _, ok := install.Global(host.Name); !ok {
+			continue
+		}
+		plan, err := install.GlobalPlan(host.Name, root, mount.BinaryPath())
+		if err == nil && !plan.Installed() {
+			continue
+		}
+		out = append(out, renderedHost{Name: host.Name + " global", Plan: plan, Err: err})
+	}
+	return out
+}
+
+// renderActive renders every active host's project files, installed here or not, so the budget holds for a fresh clone.
+func renderActive(root string) []renderedHost {
+	defer freezeProfile(root)()
+	defer pinLocalDown()()
+	return renderProject(root, false)
+}
+
+// renderProject renders each active host's project files; installedOnly skips a host not installed in root.
+func renderProject(root string, installedOnly bool) []renderedHost {
 	var out []renderedHost
 	for _, host := range mount.Active() {
 		if host.Render == nil {
 			continue
 		}
-		if host.Installed != nil && !host.Installed(root) {
+		if installedOnly && host.Installed != nil && !host.Installed(root) {
 			continue
 		}
 		plan, err := host.Render(root, mount.BinaryPath())
@@ -131,6 +155,9 @@ func renderedSkillTokens(rendered []renderedHost) int {
 	return total
 }
 
+// checkGlobal names a problem in the user's global layer rather than the repo.
+const checkGlobal = "global"
+
 // checkDrift reports a host file that matches neither the render with the local machine down nor up.
 func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 	matchesUp := map[string]bool{}
@@ -138,7 +165,7 @@ func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 		if host.Err != nil {
 			continue
 		}
-		for _, action := range host.Plan.Drift() {
+		for _, action := range host.Plan.Actions() {
 			if action.Verb != "update" && action.Verb != "remove" && action.Verb != "create" {
 				matchesUp[action.Path] = true
 			}
@@ -150,17 +177,24 @@ func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 			problems = append(problems, Problem{"drift", host.Name, host.Err.Error()})
 			continue
 		}
-		for _, action := range host.Plan.Drift() {
+		for _, action := range host.Plan.Actions() {
 			if action.Seed || matchesUp[action.Path] {
 				continue
 			}
+			check, where, fix := "drift", action.Path, host.Plan.Fix
+			if host.Plan.Marker != "" {
+				check, where = checkGlobal, filepath.Join(host.Plan.Root, action.Path)
+			}
+			if fix == "" {
+				fix = "komodo install"
+			}
 			switch action.Verb {
 			case "update", "remove":
-				problems = append(problems, Problem{"drift", action.Path,
-					"differs from what the source renders now; run komodo install"})
+				problems = append(problems, Problem{check, where,
+					"differs from what the source renders now; run " + fix})
 			case "create":
-				problems = append(problems, Problem{"drift", action.Path,
-					"the source renders this file now but the mount has never written it; run komodo install"})
+				problems = append(problems, Problem{check, where,
+					"the source renders this file now but the mount has never written it; run " + fix})
 			}
 		}
 	}

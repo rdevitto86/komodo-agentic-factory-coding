@@ -91,7 +91,9 @@ func TestAddIgnoreKeepsACRLFFilesLineEnding(t *testing.T) {
 	}
 }
 
-func TestDriftIgnoresWhichKomodoBinaryTheHookRuns(t *testing.T) {
+// TestAHookNamingAnotherBinaryIsDrift proves every hook must name the one fixed binary, so a stale
+// path, such as a global hook left on an old build, is drift install rewrites and doctor reports.
+func TestAHookNamingAnotherBinaryIsDrift(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "settings.json")
 	installed := `{"hooks": [{"command": "C:\\tools\\komodo.exe guard"}]}`
@@ -99,39 +101,29 @@ func TestDriftIgnoresWhichKomodoBinaryTheHookRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := Plan{Host: "h", Root: root}
-	plan.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-linux-amd64 guard"}]}`), "settings")
-	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "same" {
-		t.Fatalf("drift = %+v, want same", got)
-	}
-	if got := plan.Actions(); got[0].Verb != "update" {
-		t.Fatalf("actions = %+v, want update so install still rewrites the path", got)
-	}
-	other := Plan{Host: "h", Root: root}
-	other.Add(path, []byte(`{"hooks": [{"command": "/usr/bin/other guard"}]}`), "settings")
-	if got := other.Drift(); got[0].Verb != "update" {
-		t.Fatalf("drift = %+v, want a non-komodo hook to count", got)
+	plan.Add(path, []byte(`{"hooks": [{"command": "/home/a/.komodo/bin/komodo guard"}]}`), "settings")
+	if got := plan.Actions(); len(got) != 1 || got[0].Verb != "update" {
+		t.Fatalf("actions = %+v, want update for a hook naming another binary", got)
 	}
 	if got := HookBinaries([]byte(installed)); len(got) != 1 || got[0] != `C:\tools\komodo.exe` {
 		t.Fatalf("hook binaries = %q", got)
 	}
 }
 
-func TestDriftIgnoresWhichKomodoBinaryAPluginHookRuns(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "hooks.json")
-	installed := `{"hooks": [{"command": "/tmp/scratch/komodo-safe hook taskchecks --host claude"}]}`
-	if err := os.WriteFile(path, []byte(installed), 0o644); err != nil {
+func TestInstalledFollowsTheMarker(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), ".rendered")
+	if !(Plan{}).Installed() {
+		t.Fatal("a repo plan with no marker is always installed")
+	}
+	plan := Plan{Marker: marker}
+	if plan.Installed() {
+		t.Fatal("a missing marker means the layer was never installed")
+	}
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan := Plan{Host: "h", Root: root}
-	plan.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-darwin-arm64 hook taskchecks --host claude"}]}`), "hooks")
-	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "same" {
-		t.Fatalf("drift = %+v; another komodo binary running the same hook is no drift", got)
-	}
-	changed := Plan{Host: "h", Root: root}
-	changed.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-darwin-arm64 hook timewarn --host claude"}]}`), "hooks")
-	if got := changed.Drift(); got[0].Verb != "update" {
-		t.Fatalf("drift = %+v; a different hook or argument still counts", got)
+	if !plan.Installed() {
+		t.Fatal("a present marker means the layer is installed")
 	}
 }
 
@@ -356,9 +348,6 @@ func TestActionsReportsATrackedFileAsKeptNotUpdated(t *testing.T) {
 	if len(actions) != 1 || actions[0].Verb != "keep" {
 		t.Fatalf("actions = %+v, want keep for a tracked file", actions)
 	}
-	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "keep" {
-		t.Fatalf("drift = %+v, want keep for a tracked file", got)
-	}
 }
 
 // TestActionsFlagsATrackedSkillThatDiffersFromTheRender proves a tracked file's kept action carries
@@ -407,5 +396,21 @@ func TestApplyStillWritesAnUntrackedFile(t *testing.T) {
 	}
 	if string(got) != `{"ok": true}` {
 		t.Fatalf("settings.json = %q, want the rendered body for an untracked file", got)
+	}
+}
+
+func TestApplyWritesEachFileWholeAndLeavesNoTemp(t *testing.T) {
+	root := t.TempDir()
+	plan := Plan{Host: "h", Root: root}
+	path := filepath.Join(root, "nested", "settings.json")
+	plan.Add(path, []byte(`{"hooks": []}`), "settings")
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != `{"hooks": []}` {
+		t.Fatalf("file = %q, %v", data, err)
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
+		t.Fatalf("dir holds %d entries; a temp file was left behind", len(entries))
 	}
 }

@@ -12,6 +12,14 @@ import (
 	"komodo/internal/proc"
 )
 
+// checkCommand judges a shell command the way a real host's hook would, through Check.
+func checkCommand(command, cwd string, policy Policy) Decision {
+	return Check(Request{
+		HookEventName: "PreToolUse", ToolName: "Bash", Cwd: cwd,
+		ToolInput: map[string]any{"command": command},
+	}, policy, CurrentBranch(cwd))
+}
+
 // gitRepo builds a real git repository on branch, so a -C or cd into it resolves a real branch.
 func gitRepo(t *testing.T, branch string) string {
 	t.Helper()
@@ -38,7 +46,7 @@ func TestGitDashCIsJudgedByTheTargetDirsBranch(t *testing.T) {
 	session := gitRepo(t, "feat/x")
 	other := gitRepo(t, "main")
 	command := "git -C " + other + " commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a -C commit on main is allowed; want it refused")
 	}
@@ -51,7 +59,7 @@ func TestGitDashCOntoANonCriticalWorktreeIsAllowed(t *testing.T) {
 	session := gitRepo(t, "main")
 	other := gitRepo(t, "chore/komodo-line-prep")
 	command := "git -C " + other + " commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a -C commit on a non-critical worktree is refused: %v", decision.Findings)
 	}
@@ -64,7 +72,7 @@ func TestCDThenGitIsJudgedByTheNewDirsBranch(t *testing.T) {
 	session := gitRepo(t, "feat/x")
 	other := gitRepo(t, "main")
 	command := "cd " + other + " && git commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a cd then commit on main is allowed; want it refused")
 	}
@@ -146,7 +154,7 @@ func TestCheckoutOntoAnExistingBranchInALinkedWorktreeIsRefused(t *testing.T) {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
 	linked := linkedWorktree(t, root)
-	decision := CheckCommand("git checkout feat/y", linked, DefaultPolicy())
+	decision := checkCommand("git checkout feat/y", linked, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a checkout onto an existing branch in a linked worktree is allowed; want it refused")
 	}
@@ -165,7 +173,7 @@ func TestCheckoutInTheMainCheckoutStaysFree(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
-	decision := CheckCommand("git checkout feat/y", root, DefaultPolicy())
+	decision := checkCommand("git checkout feat/y", root, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a checkout in the main checkout is refused: %v", decision.Findings)
 	}
@@ -182,9 +190,141 @@ func TestSwitchDetachInALinkedWorktreeIsAllowed(t *testing.T) {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
 	linked := linkedWorktree(t, root)
-	decision := CheckCommand("git switch --detach feat/y", linked, DefaultPolicy())
+	decision := checkCommand("git switch --detach feat/y", linked, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a detached switch in a linked worktree is refused: %v", decision.Findings)
+	}
+}
+
+// TestAShortForceClusterIsStillRefused proves a packed short-option cluster such as -fu is read
+// as force, the same as the long spelling, since -f never arrives alone on a common push.
+func TestAShortForceClusterIsStillRefused(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push -fu origin feat/x"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("git push -fu is allowed; want the packed force cluster refused")
+	}
+	if !containsAny(decision.Findings, "never rewritten") {
+		t.Fatalf("findings = %v, want the history-rewrite rule named", decision.Findings)
+	}
+}
+
+// TestNoVerifyClustersAndAbbreviationsAreStillCaught proves hasNoVerify reads -n packed ahead of
+// a value-taking short flag and an unambiguous --no-verify prefix, not only the exact spellings.
+func TestNoVerifyClustersAndAbbreviationsAreStillCaught(t *testing.T) {
+	registerFakeHost()
+	for _, command := range []string{"git commit -nm x", "git commit --no-verif -m x"} {
+		decision := Check(
+			Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+				ToolInput: map[string]any{"command": command}},
+			DefaultPolicy(), "feat/x")
+		if !decision.Deny {
+			t.Fatalf("%q is allowed; want the no-verify rule to catch it", command)
+		}
+		if !containsAny(decision.Findings, "skips the gate") {
+			t.Fatalf("%q findings = %v, want the no-verify rule named", command, decision.Findings)
+		}
+	}
+}
+
+// TestNoVerifysNNeverMatchesInsideAValue proves a value-taking flag before n in a short cluster
+// consumes the rest of the cluster, so -mn never reads as a packed -n.
+func TestNoVerifysNNeverMatchesInsideAValue(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git commit -mn"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git commit -mn is refused: %v", decision.Findings)
+	}
+}
+
+// TestBranchForceOntoACriticalStartPointIsAllowed proves git branch -f judges only the branch it
+// resets, never a critical ref it merely reads as the new start point.
+func TestBranchForceOntoACriticalStartPointIsAllowed(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -f feat/y main"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git branch -f feat/y main is refused: %v", decision.Findings)
+	}
+}
+
+// TestBranchForceOfACriticalRefIsStillRefused proves git branch -f still refuses resetting the
+// critical ref itself, when it is the branch being force-moved, not merely the start point.
+func TestBranchForceOfACriticalRefIsStillRefused(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -f main feat/y"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("git branch -f main feat/y is allowed; want the force-moved critical ref refused")
+	}
+}
+
+// TestBranchCopyFromACriticalRefIsAllowed proves git branch -c judges only the destination it
+// creates, never the critical ref it copies from.
+func TestBranchCopyFromACriticalRefIsAllowed(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -c main feat/copy"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git branch -c main feat/copy is refused: %v", decision.Findings)
+	}
+}
+
+// TestUnsafeModeStillRefusesACriticalRefDelete proves a critical-ref delete is refused in every
+// mode, unsafe included, since unsafe only loosens the plain push-to-critical-ref rule.
+func TestUnsafeModeStillRefusesACriticalRefDelete(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push --delete origin main"}},
+		policy, "feat/x")
+	if !decision.Deny {
+		t.Fatal("an unsafe-mode delete of a critical ref is allowed; want it refused in every mode")
+	}
+}
+
+// TestUnsafeModeStillRefusesAModelsPushToAnEpicBranch proves a line session's push to an epic
+// branch is refused in every mode, unsafe included, since only the conductor ever pushes one.
+func TestUnsafeModeStillRefusesAModelsPushToAnEpicBranch(t *testing.T) {
+	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push origin feat/1.0.0-alpha.7"}},
+		policy, "feat/x")
+	if !decision.Deny {
+		t.Fatal("an unsafe-mode push to an epic branch from a line session is allowed; want it refused")
+	}
+}
+
+// TestUnsafeModeAllowsAPlainPushToACriticalRef proves unsafe mode still loosens the one rule it
+// names: a plain push landing on a critical ref, with no delete and no epic branch involved.
+func TestUnsafeModeAllowsAPlainPushToACriticalRef(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push origin main"}},
+		policy, "feat/x")
+	if decision.Deny {
+		t.Fatalf("an unsafe-mode plain push to main is refused: %v", decision.Findings)
 	}
 }
 
@@ -213,7 +353,7 @@ func TestASessionsPushOrTipWriteToALeasedBranchIsRefused(t *testing.T) {
 		"git push origin feat/held",
 		"git update-ref refs/komodo/feat/held HEAD",
 	} {
-		decision := CheckCommand(command, repo, DefaultPolicy())
+		decision := checkCommand(command, repo, DefaultPolicy())
 		if !decision.Deny {
 			t.Fatalf("%q is allowed; want it refused", command)
 		}
@@ -223,7 +363,7 @@ func TestASessionsPushOrTipWriteToALeasedBranchIsRefused(t *testing.T) {
 		}
 	}
 	for _, command := range []string{"git push origin feat/free", "git update-ref refs/komodo/feat/free HEAD"} {
-		if decision := CheckCommand(command, repo, DefaultPolicy()); decision.Deny {
+		if decision := checkCommand(command, repo, DefaultPolicy()); decision.Deny {
 			t.Fatalf("%q refused: %v", command, decision.Findings)
 		}
 	}
@@ -236,7 +376,7 @@ func TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard(t *testing.T) {
 	repo := gitRepo(t, "feat/me")
 	leased(t, repo, "feat/held")
 	t.Setenv(lease.RunEnv, strconv.Itoa(os.Getpid()))
-	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+	if decision := checkCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
 		t.Fatalf("the lease's own run is refused: %v", decision.Findings)
 	}
 	t.Setenv(lease.RunEnv, "")
@@ -244,7 +384,7 @@ func TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard(t *testing.T) {
 	if err := lease.Take(repo, "TG-1", "feat/held", holder, time.Now().Add(-lease.TTL-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+	if decision := checkCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
 		t.Fatalf("an expired lease refuses: %v", decision.Findings)
 	}
 }

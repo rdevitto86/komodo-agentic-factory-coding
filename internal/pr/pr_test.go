@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fake records the gh invocations a client makes and returns outputs in call order,
@@ -128,10 +129,10 @@ func TestUnlabelRemovesEachLabelAndSkipsAnEmptyList(t *testing.T) {
 	if err := client.Unlabel("7", nil); err != nil || len(*calls) != 0 {
 		t.Fatalf("unlabel = %v with calls %q; no label means no call", err, *calls)
 	}
-	if err := client.Unlabel("7", []string{"status: wip"}); err != nil {
+	if err := client.Unlabel("7", []string{"status/wip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := (*calls)[0]; got != "pr edit 7 --remove-label status: wip" {
+	if got := (*calls)[0]; got != "pr edit 7 --remove-label status/wip" {
 		t.Fatalf("call = %q, want the label removed", got)
 	}
 }
@@ -141,7 +142,7 @@ func TestReadyAndUnlabelReturnAnAPIError(t *testing.T) {
 	if err := client.Ready("7"); err == nil {
 		t.Fatal("ready: want an error")
 	}
-	if err := client.Unlabel("7", []string{"status: wip"}); err == nil {
+	if err := client.Unlabel("7", []string{"status/wip"}); err == nil {
 		t.Fatal("unlabel: want an error")
 	}
 }
@@ -236,19 +237,6 @@ func TestThreadsDropsResolvedThreads(t *testing.T) {
 	}
 }
 
-func TestReplyPostsOnTheThreadItself(t *testing.T) {
-	client, calls := fake(t, `{"data":{"addPullRequestReviewThreadReply":{"comment":{"id":"PRRC_1"}}}}`)
-	if err := client.Reply("PRT_1", "fixed in abc123"); err != nil {
-		t.Fatal(err)
-	}
-	got := (*calls)[0]
-	for _, want := range []string{"addPullRequestReviewThreadReply", "id=PRT_1", "body=fixed in abc123"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("call %q is missing %q", got, want)
-		}
-	}
-}
-
 func TestResolveMarksTheThreadItself(t *testing.T) {
 	client, calls := fake(t, `{"data":{"resolveReviewThread":{"thread":{"id":"PRT_1"}}}}`)
 	if err := client.Resolve("PRT_1"); err != nil {
@@ -262,41 +250,6 @@ func TestResolveMarksTheThreadItself(t *testing.T) {
 	}
 }
 
-// TestRespondLoopTerminates proves a reply followed by a Resolve call drops the
-// thread out of the next Threads call, so the respond loop ends.
-func TestRespondLoopTerminates(t *testing.T) {
-	open := `{"data":{"resource":{"reviewThreads":{"nodes":[` +
-		`{"id":"PRT_1","isResolved":false,"path":"a.go","line":4,` +
-		`"comments":{"nodes":[{"body":"fix","author":{"login":"rev"}}]}}]}}}}`
-	resolved := `{"data":{"resource":{"reviewThreads":{"nodes":[` +
-		`{"id":"PRT_1","isResolved":true,"path":"a.go","line":4,` +
-		`"comments":{"nodes":[{"body":"fix","author":{"login":"rev"}}]}}]}}}}`
-	replyOut := `{"data":{"addPullRequestReviewThreadReply":{"comment":{"id":"PRRC_1"}}}}`
-	resolveOut := `{"data":{"resolveReviewThread":{"thread":{"id":"PRT_1"}}}}`
-	client, _ := fake(t, pullFixture, open, replyOut, resolveOut, pullFixture, resolved)
-
-	first, err := client.Threads("7")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first) != 1 {
-		t.Fatalf("first threads = %+v, want one unresolved thread", first)
-	}
-	if err := client.Reply(first[0].ID, "fixed in abc123"); err != nil {
-		t.Fatal(err)
-	}
-	if err := client.Resolve(first[0].ID); err != nil {
-		t.Fatal(err)
-	}
-	second, err := client.Threads("7")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(second) != 0 {
-		t.Fatalf("second threads = %+v, want none left once the thread is resolved", second)
-	}
-}
-
 func TestEditPassesTheGivenArgs(t *testing.T) {
 	client, calls := fake(t, "")
 	if err := client.Edit("7", "--title", "New title"); err != nil {
@@ -304,19 +257,6 @@ func TestEditPassesTheGivenArgs(t *testing.T) {
 	}
 	got := (*calls)[0]
 	for _, want := range []string{"pr edit 7", "--title", "New title"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("call %q is missing %q", got, want)
-		}
-	}
-}
-
-func TestCommentPostsTheBody(t *testing.T) {
-	client, calls := fake(t, "")
-	if err := client.Comment("7", "looks good"); err != nil {
-		t.Fatal(err)
-	}
-	got := (*calls)[0]
-	for _, want := range []string{"pr comment 7", "--body", "looks good"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("call %q is missing %q", got, want)
 		}
@@ -371,6 +311,22 @@ func TestRunWrapsAFailingGh(t *testing.T) {
 	scriptGh(t, "echo boom >&2\nexit 1\n")
 	if _, err := Run(".", "pr", "list"); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunKillsAHungGhAndItsChildren proves a gh command past Timeout is killed, process group
+// included, so a hung gh never blocks the line.
+func TestRunKillsAHungGhAndItsChildren(t *testing.T) {
+	scriptGh(t, "sleep 30 &\nsleep 30\n")
+	saved := Timeout
+	Timeout = 200 * time.Millisecond
+	t.Cleanup(func() { Timeout = saved })
+	started := time.Now()
+	if _, err := Run(".", "pr", "list"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
