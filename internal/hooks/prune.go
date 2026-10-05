@@ -103,12 +103,13 @@ func Sweep(root string) {
 	if !takeLock(lock) {
 		return
 	}
-	result, work := make(chan string, 1), prune
+	// The hooks are read before the goroutine starts, so a later swap of either never races with it.
+	result, work, refresh := make(chan string, 1), prune, Refresh
 	go func() {
 		// The lock outlives a timed-out select below, so a second sweep never starts while this one works.
 		defer os.Remove(lock)
 		var refreshed []string
-		if Refresh != nil {
+		if refresh != nil {
 			at := root
 			if !repo {
 				// An empty root mounts no host and holds no bin or toolkit, so only the machine layer refreshes.
@@ -121,7 +122,7 @@ func Sweep(root string) {
 				at = empty
 			}
 			var err error
-			if refreshed, err = Refresh(at); err != nil {
+			if refreshed, err = refresh(at); err != nil {
 				result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
 				return
 			}
