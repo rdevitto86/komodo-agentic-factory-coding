@@ -623,6 +623,9 @@ func mergedReview(lenses []review.Lens, results map[review.Lens]mount.Result) mo
 // repair resumes the builder with the fix list, or starts a fresh one when the host cannot resume,
 // and stops the loop when the repair changed no file.
 func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
+	if r.repairs >= pushbackLimit {
+		return fmt.Errorf("%d repair rounds are spent, leaving %s", r.repairs, strings.Join(r.fixes, "; "))
+	}
 	r.repairs++
 	input := fixList(r.fixes) + taskFiles(d.Tasks)
 	if r.answer != "" {

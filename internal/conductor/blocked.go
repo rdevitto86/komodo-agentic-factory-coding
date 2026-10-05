@@ -10,6 +10,9 @@ import (
 // stallLimit is how many stops without progress block a group, whatever the orchestrator would say.
 const stallLimit = 2
 
+// pushbackLimit is how many repair rounds, across every run and resume, a group gets before it is blocked.
+const pushbackLimit = 3
+
 // HeldGroup is a pending group held back because a group it depends on stopped.
 type HeldGroup struct {
 	Group backlog.Group
@@ -51,8 +54,13 @@ func Hold(pending []backlog.Group, stopped []string) (free []backlog.Group, held
 	return free, held
 }
 
-// stalled blocks a group that stopped stallLimit times without progress, before any orchestrator is asked.
+// stalled blocks a group that spent its pushbacks or stopped stallLimit times without progress, before any orchestrator is asked.
 func stalled(s *State, r *round) bool {
+	if r.repairs >= pushbackLimit {
+		s.Answered, s.Stop = true, true
+		r.needs = fmt.Sprintf("the group spent its %d repair rounds; last: %s", pushbackLimit, r.reason)
+		return true
+	}
 	if r.stalls < stallLimit {
 		return false
 	}

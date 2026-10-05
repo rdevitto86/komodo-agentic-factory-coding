@@ -78,6 +78,8 @@ type session struct {
 	logs []io.Closer
 	// watcher stops the session's process tree past proc.DefaultLimits and reaps what it leaves behind.
 	watcher *proc.Watcher
+	// beat kills the session past proc.SessionWall, or silent past proc.SessionIdle.
+	beat *proc.Heartbeat
 
 	waitOnce sync.Once
 	waitErr  error
@@ -284,8 +286,9 @@ func (m *Mount) spawn(ctx context.Context, argv, env []string, prompt string, re
 	}
 
 	buf := &bytes.Buffer{}
-	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{}),
-		logs: logFiles, watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
+	beat := proc.Beat(func() { proc.KillGroup(cmd) }, proc.SessionWall, proc.SessionIdle)
+	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record, beat)), req: req, done: make(chan struct{}),
+		logs: logFiles, watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits), beat: beat}
 
 	m.mu.Lock()
 	m.sessions[handle] = sess
@@ -314,7 +317,11 @@ func (m *Mount) Stream(ctx context.Context, handle mount.Handle) (<-chan mount.E
 		// Nothing the session started may outlive it; a tree that ran away is the session's error.
 		proc.KillGroup(sess.cmd)
 		sess.watcher.Stop()
+		sess.beat.Stop()
 		m.ended(sess)
+		if stuck := sess.beat.Breach(); stuck != "" {
+			waitErr = fmt.Errorf("the session %s and was killed", stuck)
+		}
 		if breach := sess.watcher.Breach(); breach != "" {
 			waitErr = fmt.Errorf("the session's process tree ran away (%s) and was killed", breach)
 		}
