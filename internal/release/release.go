@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/gate"
 )
@@ -116,6 +117,31 @@ func Taggable(text string, tags []string) []string {
 	}
 	sort.Slice(out, func(i, j int) bool { return Compare(out[i], out[j]) < 0 })
 	return out
+}
+
+// Names reports whether the changelog holds a heading for exactly version.
+func Names(text, version string) bool {
+	for _, named := range Versions(text) {
+		if named.Number == version {
+			return true
+		}
+	}
+	return false
+}
+
+// ShippedVersions lists the version of each group whose every task is DONE.
+func ShippedVersions(parsed backlog.Backlog) []string {
+	var versions []string
+	for _, group := range parsed.Groups {
+		done := len(group.Tasks) > 0
+		for _, task := range group.Tasks {
+			done = done && task.Status == "DONE"
+		}
+		if done {
+			versions = append(versions, group.Version())
+		}
+	}
+	return versions
 }
 
 // Unreleased lists the untagged versions newer than every version tag, oldest first; an older gap is history.

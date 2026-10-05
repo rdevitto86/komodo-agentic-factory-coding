@@ -1222,3 +1222,46 @@ func TestAStaleGlobalLayerFailsDoctorAndWarnsTheGate(t *testing.T) {
 		t.Fatalf("warned = %q, want the stale global settings named", warned)
 	}
 }
+
+func TestCheckChangelogNamesAShippedVersionTheChangelogLacks(t *testing.T) {
+	root := t.TempDir()
+	backlogtest.SeedText(t, root, "### [TG-90.1] A shipped group\n```yaml\ntype: feat\nversion: 4.0.0\n```\n\n"+
+		"#### [TSK-90.1.1] Done [P: H] [DONE]\n```yaml\nfiles: [a.go]\n```\n")
+	write(t, root, "CHANGELOG.md", "# Changelog\n\n## 3.0.0 — 2026-09-22\n\n- shipped\n")
+	got, err := checkChangelog(root, []string{"v3.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Where != "4.0.0" || got[0].Check != "changelog" {
+		t.Fatalf("problems = %+v, want the shipped 4.0.0 named", got)
+	}
+}
+
+func TestCheckDefaultBacklogNamesEveryBacklogPathOnOriginsDefaultBranch(t *testing.T) {
+	var calls []string
+	run := func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if args[0] == "ls-tree" {
+			return "docs/backlog/epic-14/EPIC.md\ndocs/backlog/epic-14/tg-14.1/TG.md\n", nil
+		}
+		return "", nil
+	}
+	got := CheckDefaultBacklog(t.TempDir(), "main", run)
+	if len(got) != 2 || got[0].Where != "docs/backlog/epic-14/EPIC.md" || got[1].Where != "docs/backlog/epic-14/tg-14.1/TG.md" {
+		t.Fatalf("problems = %+v, want each backlog path named", got)
+	}
+	if !strings.Contains(got[0].Detail, "komodo sync") || !strings.Contains(got[0].Detail, "origin/main") {
+		t.Fatalf("detail = %q, want the branch and the fix named", got[0].Detail)
+	}
+	if len(calls) != 2 || calls[0] != "fetch --quiet origin main" || calls[1] != "ls-tree -r --name-only origin/main -- docs/backlog" {
+		t.Fatalf("calls = %q, want a fetch then a tree listing", calls)
+	}
+	clean := func(_ string, _ ...string) (string, error) { return "", nil }
+	if got := CheckDefaultBacklog(t.TempDir(), "main", clean); len(got) != 0 {
+		t.Fatalf("problems = %+v, want none for a clean default branch", got)
+	}
+	offline := func(_ string, _ ...string) (string, error) { return "", errors.New("no route") }
+	if got := CheckDefaultBacklog(t.TempDir(), "main", offline); len(got) != 1 || !strings.Contains(got[0].Detail, "could not fetch") {
+		t.Fatalf("problems = %+v, want the failed fetch named", got)
+	}
+}

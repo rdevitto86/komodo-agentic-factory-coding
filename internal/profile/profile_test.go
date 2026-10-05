@@ -430,10 +430,10 @@ func TestAMissingProfilesDirectoryNamesTheLoadErrorInWhy(t *testing.T) {
 	}
 }
 
-func TestBaseCarriesThePullRequestSizeCeilings(t *testing.T) {
+func TestBaseCarriesOnlyThePreferredPullRequestSize(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
-	if got.PRFiles != 20 || got.PRLinesPreferred != 1000 || got.PRLinesMax != 2000 {
-		t.Fatalf("pr size = %+v", got)
+	if got.PRLinesPreferred != 1000 {
+		t.Fatalf("pr lines preferred = %d, want 1000", got.PRLinesPreferred)
 	}
 }
 

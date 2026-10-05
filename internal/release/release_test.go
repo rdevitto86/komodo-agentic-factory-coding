@@ -9,10 +9,25 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
 	"komodo/internal/gate"
 )
 
 const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
+
+func TestNamesMatchesOnlyAWholeHeadingVersion(t *testing.T) {
+	if !Names(twoVersions, "1.3.0") || Names(twoVersions, "1.3") || Names(twoVersions, "3.0.0") {
+		t.Fatal("Names must match exactly the versions the headings carry")
+	}
+}
+
+func TestShippedVersionsSkipsAGroupWithAnOpenTask(t *testing.T) {
+	text := "### [TG-1.1] Done\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n#### [TSK-1.1.1] A [P: H] [DONE]\n```yaml\nfiles: [a.go]\n```\n\n" +
+		"### [TG-1.2] Open\n```yaml\ntype: feat\nversion: 3.0.0\n```\n\n#### [TSK-1.2.1] B [P: H] [READY]\n```yaml\nfiles: [b.go]\n```\n"
+	if got := ShippedVersions(backlog.Parse(text)); len(got) != 1 || got[0] != "2.0.0" {
+		t.Fatalf("shipped = %v, want only the fully DONE group's version", got)
+	}
+}
 
 func TestVersionsReadsEveryHeading(t *testing.T) {
 	got := Versions(twoVersions)

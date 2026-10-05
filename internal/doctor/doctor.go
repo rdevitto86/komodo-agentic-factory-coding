@@ -100,6 +100,7 @@ func Run(root string, options Options) ([]Problem, error) {
 		problems = append(problems, CheckRulesets(root, defaultBranch, pr.Run)...)
 		problems = append(problems, CheckHeadBranches(root, pr.Run)...)
 		problems = append(problems, CheckEpics(root, defaultBranch, pr.Run)...)
+		problems = append(problems, CheckDefaultBacklog(root, defaultBranch, git.Run)...)
 		if options.Warn != nil {
 			for _, note := range ForgeNotes(root, pr.Run) {
 				options.Warn(note)
@@ -223,6 +224,21 @@ func StrayWorktrees(root string) []string {
 		}
 	}
 	return notes
+}
+
+// CheckDefaultBacklog fetches origin's default branch and reports each backlog path it holds, since only
+// an epic branch carries one.
+func CheckDefaultBacklog(root, defaultBranch string, gitRun GitRunner) []Problem {
+	ref := "origin/" + defaultBranch
+	if _, err := gitRun(root, "fetch", "--quiet", "origin", defaultBranch); err != nil {
+		return []Problem{{"leftovers", ref, "could not fetch: " + err.Error()}}
+	}
+	var problems []Problem
+	for _, path := range lines(gitRun(root, "ls-tree", "-r", "--name-only", ref, "--", backlog.GroupFilesDir)) {
+		problems = append(problems, Problem{"leftovers", path,
+			fmt.Sprintf("is on %s; run `komodo sync` to open the cleanup pull request", ref)})
+	}
+	return problems
 }
 
 // base is the remote's default branch, or main.
@@ -571,12 +587,22 @@ func checkGit(root string) ([]Problem, error) {
 			problems = append(problems, Problem{"git", rel(root, path), "a conflict marker is still in the file"})
 		}
 	}
+	found, err := checkChangelog(root, lines(git.Run(root, "tag", "--list")))
+	return append(problems, found...), err
+}
+
+// checkChangelog reports each drift between the changelog, the tags, and the shipped groups' versions.
+func checkChangelog(root string, tags []string) ([]Problem, error) {
 	changelog, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
 	if err != nil {
-		return problems, err
+		return nil, err
 	}
-	tags := lines(git.Run(root, "tag", "--list"))
-	for _, drift := range release.Check(changelog, tags, nil) {
+	var shipped []string
+	if parsed, err := backlog.LoadRoot(root); err == nil {
+		shipped = release.ShippedVersions(parsed)
+	}
+	var problems []Problem
+	for _, drift := range release.Check(changelog, tags, shipped) {
 		problems = append(problems, Problem{"changelog", drift.Subject, drift.Detail})
 	}
 	return problems, nil

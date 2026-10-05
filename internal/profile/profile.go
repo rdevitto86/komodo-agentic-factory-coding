@@ -53,9 +53,7 @@ type Profile struct {
 	Why              string                 `json:"why"`
 	Mode             string                 `json:"mode"`
 	Roles            map[string]RoleProfile `json:"roles"`
-	PRFiles          int                    `json:"pr_files"`
 	PRLinesPreferred int                    `json:"pr_lines_preferred"`
-	PRLinesMax       int                    `json:"pr_lines_max"`
 }
 
 // RoleProfile names one role's tier and effort; the host's mount pins the tier's full model ID (decision 0001).
@@ -102,9 +100,7 @@ func base() Profile {
 		PauseAt:          0.9,
 		WarnAt:           0.75,
 		Labels:           []string{"agent"},
-		PRFiles:          20,
 		PRLinesPreferred: 1000,
-		PRLinesMax:       2000,
 	}
 }
 

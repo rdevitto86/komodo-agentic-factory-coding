@@ -240,10 +240,7 @@ func ShipGroupContext(
 	}
 	tip := diffTip(root, plan.Branch)
 	lines = ChangedLines(group, StartRef(group, plan.Base), tip)
-	files, added := ReviewSize(group, StartRef(group, plan.Base), tip)
-	if err := checkPRSize(plan.Group, files, added, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
-		return nil, err
-	}
+	_, added := ReviewSize(group, StartRef(group, plan.Base), tip)
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
@@ -1023,23 +1020,6 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 // bookkeeping reports a path Ship writes itself: a backlog file.
 func bookkeeping(path string) bool {
 	return strings.HasPrefix(path, "docs/backlog/")
-}
-
-// checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
-// A zero ceiling is unset and never refuses.
-func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
-	var over []string
-	if filesCap > 0 && files > filesCap {
-		over = append(over, fmt.Sprintf("%d file(s) (cap %d)", files, filesCap))
-	}
-	if linesMax > 0 && lines > linesMax {
-		over = append(over, fmt.Sprintf("%d added line(s) (cap %d)", lines, linesMax))
-	}
-	if len(over) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
-		group, strings.Join(over, " and "))
 }
 
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.

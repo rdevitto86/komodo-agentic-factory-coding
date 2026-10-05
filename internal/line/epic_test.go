@@ -25,6 +25,16 @@ func epicRepo(t *testing.T) string {
 	return root
 }
 
+// remoteHead is origin's epic branch line as ls-remote prints it.
+func remoteHead(t *testing.T, root string) string {
+	t.Helper()
+	out, err := git.Run(root, "ls-remote", "--heads", "origin", "refs/heads/feat/2.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestEpicBranchNameIsEmptyWithNoVersion(t *testing.T) {
 	if got := EpicBranchName(""); got != "" {
 		t.Fatalf("EpicBranchName(\"\") = %q, want empty", got)
@@ -102,11 +112,17 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 	}
 }
 
-func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
+func TestOpenEpicLeavesAnOpenEpicPullAlone(t *testing.T) {
 	root := epicRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
+	var calls []string
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		t.Fatalf("gh must not run once the epic branch already lives on origin: %v", args)
+		joined := strings.Join(args, " ")
+		calls = append(calls, joined)
+		if strings.HasPrefix(joined, "pr list") {
+			return `[{"headRefName":"feat/2.0.0"}]`, nil
+		}
+		t.Fatalf("gh must only list once the epic pull request is open: %v", args)
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
@@ -115,7 +131,75 @@ func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result != nil {
-		t.Fatalf("result = %+v, want nil once the branch already exists", result)
+		t.Fatalf("result = %+v, want nil once the pull request is open", result)
+	}
+	if len(calls) != 1 || !strings.Contains(calls[0], "--head feat/2.0.0 --base main --state open") {
+		t.Fatalf("calls = %v, want one open pull request lookup", calls)
+	}
+}
+
+func TestOpenEpicWarnsWhenTheForgeCannotListAnExistingBranchsPulls(t *testing.T) {
+	root := epicRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		if strings.Join(args[:2], " ") != "pr list" {
+			t.Fatalf("gh must not create after a failed lookup: %v", args)
+		}
+		return "", fmt.Errorf("gh: not logged in")
+	}}
+	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
+	result, err := openEpic(root, epicBacklog(), plan, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.URL != "" || len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "not logged in") {
+		t.Fatalf("result = %+v, want one warning naming the failed lookup", result)
+	}
+	if result, err := openEpic(root, epicBacklog(), plan, nil); err != nil || result != nil {
+		t.Fatalf("result = %+v, %v; with no forge client an existing branch is left alone", result, err)
+	}
+}
+
+func TestOpenEpicOpensThePullForABranchAlreadyOnOrigin(t *testing.T) {
+	root := epicRepo(t)
+	runGit(t, root, "commit", "--allow-empty", "-m", "a person's epic work")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
+	tip := remoteHead(t, root)
+	var created []string
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "pr list"):
+			return "[]", nil
+		case strings.HasPrefix(joined, "pr create"):
+			created = append(created, joined)
+			return "https://example.com/pull/12", nil
+		}
+		t.Fatalf("unexpected gh call: %v", args)
+		return "", nil
+	}}
+	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
+	result, err := openEpic(root, epicBacklog(), plan, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.URL != "https://example.com/pull/12" || !result.Draft {
+		t.Fatalf("result = %+v, want the draft opened", result)
+	}
+	if len(created) != 1 {
+		t.Fatalf("created = %v, want one pull request", created)
+	}
+	for _, want := range []string{
+		"--draft", "--base main", "--head feat/2.0.0",
+		"feat: Phase 1: the conductor drives (2.0.0)",
+		"one group runs through the conductor within 60 minutes.",
+	} {
+		if !strings.Contains(created[0], want) {
+			t.Errorf("call %q is missing %q", created[0], want)
+		}
+	}
+	if after := remoteHead(t, root); after != tip {
+		t.Fatalf("origin's epic branch moved from %q to %q; an existing branch is never recut", tip, after)
 	}
 }
 
@@ -153,5 +237,41 @@ func TestOpenEpicSkipsAPlanWithNoVersion(t *testing.T) {
 	}
 	if result != nil {
 		t.Fatalf("result = %+v, want nil with no version", result)
+	}
+}
+
+func TestReadyEpicRefusesABacklogFileAndAMissingChangelogHeading(t *testing.T) {
+	root := epicRepo(t)
+	runGit(t, root, "fetch", "origin")
+	commit(t, root, "docs/backlog/epic-05/EPIC.md", "# EPIC-05\n", "an epic folder")
+	commit(t, root, "CHANGELOG.md", "# Changelog\n\n## 1.0.0 — 2026-09-30\n\n- old\n", "a changelog")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
+	runGit(t, root, "fetch", "origin")
+	var calls []string
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	}}
+	err := ReadyEpic(root, "2.0.0", client, "https://example.com/pull/9", true)
+	if err == nil {
+		t.Fatal("want a refusal while the epic adds a backlog file and the changelog lacks its version")
+	}
+	for _, want := range []string{"docs/backlog/epic-05/EPIC.md", "CHANGELOG.md has no heading for 2.0.0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, missing %q", err, want)
+		}
+	}
+	if len(calls) != 0 {
+		t.Fatalf("calls = %v; a refused epic must stay a draft", calls)
+	}
+	runGit(t, root, "rm", "-r", "-q", "docs/backlog")
+	commit(t, root, "CHANGELOG.md", "# Changelog\n\n## 2.0.0 — 2026-10-05\n\n- new\n\n## 1.0.0 — 2026-09-30\n\n- old\n", "finish the epic")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
+	runGit(t, root, "fetch", "origin")
+	if err := ReadyEpic(root, "2.0.0", client, "https://example.com/pull/9", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "pr ready https://example.com/pull/9" {
+		t.Fatalf("calls = %v, want the draft marked ready", calls)
 	}
 }

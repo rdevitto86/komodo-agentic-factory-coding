@@ -1289,59 +1289,6 @@ func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
 	}
 }
 
-func TestCheckPRSizeRefusesOverEitherCeiling(t *testing.T) {
-	if err := checkPRSize("TG-1", 5, 100, 0, 0); err != nil {
-		t.Fatalf("a zero ceiling must never refuse: %v", err)
-	}
-	if err := checkPRSize("TG-1", 21, 100, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a file count over the cap must name a split", err)
-	}
-	if err := checkPRSize("TG-1", 5, 2001, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a line count over the cap must name a split", err)
-	}
-}
-
-func TestShipRefusesAGroupOverThePullRequestFileCeiling(t *testing.T) {
-	root, group := shipRepo(t)
-	runGit(t, group, "branch", "main")
-	for _, name := range []string{"two.go", "three.go"} {
-		if err := os.WriteFile(filepath.Join(group, name), []byte("package a\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runGit(t, group, "add", "-A")
-	runGit(t, group, "commit", "-m", "work")
-	plan := &Plan{
-		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
-		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
-	}
-	plan.Profile.PRFiles = 1
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a diff over the file ceiling must refuse and name a split", err)
-	}
-}
-
-func TestShipRefusesAGroupOverThePullRequestLineCeiling(t *testing.T) {
-	root, group := shipRepo(t)
-	runGit(t, group, "branch", "main")
-	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, group, "add", "-A")
-	runGit(t, group, "commit", "-m", "work")
-	plan := &Plan{
-		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
-		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
-	}
-	plan.Profile.PRLinesMax = 3
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a diff over the line ceiling must refuse and name a split", err)
-	}
-}
-
 func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
 	root, group := shipRepo(t)
 	runGit(t, group, "branch", "main")

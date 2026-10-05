@@ -3,6 +3,7 @@ package changelog
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,44 @@ func TestValidAcceptsOnlyWholeVersions(t *testing.T) {
 		if got := Valid(version); got != want {
 			t.Errorf("Valid(%q) = %v, want %v", version, got, want)
 		}
+	}
+}
+
+func TestHeadingNamesTheVersionInProgress(t *testing.T) {
+	text := "# Changelog\n\n## Unreleased — 1.0.0-beta.6\n\n- next\n\n## 1.0.0-beta.5 — 2026-10-04\n\n- old\n"
+	if got := Latest(text); got != "1.0.0-beta.5" {
+		t.Fatalf("latest = %q, want the newest released version, never the one in progress", got)
+	}
+	if match := Heading.FindStringSubmatch("## Unreleased — 1.0.0-beta.6"); match == nil || match[1] != "1.0.0-beta.6" {
+		t.Fatalf("match = %q, want the version captured", match)
+	}
+}
+
+func TestSectionRendersAHeadingASummaryAndOneBulletPerItem(t *testing.T) {
+	got := Section("2.0.0", "2026-10-05", FirstSentence("The line ships.  It also cleans up."), []string{"First group", "Second group"})
+	want := "## 2.0.0 — 2026-10-05\n\nThe line ships.\n\n- First group\n- Second group\n"
+	if got != want {
+		t.Fatalf("section = %q, want %q", got, want)
+	}
+	if FirstSentence("no full stop") != "no full stop" {
+		t.Fatal("a goal with no full stop is its own first sentence")
+	}
+}
+
+func TestInsertPutsTheSectionAboveThePreviousOneOnlyWhenAbsent(t *testing.T) {
+	section := Section("1.0.0-beta.1", "2026-10-05", "", []string{"A group"})
+	got := Insert(base, "1.0.0-beta.1", section)
+	if want := "# Changelog\n\nIntro.\n\n" + section + "\n## 1.0.0-alpha.5"; !strings.HasPrefix(got, want) {
+		t.Fatalf("inserted = %q, want the section above alpha.5", got)
+	}
+	if Latest(got) != "1.0.0-beta.1" {
+		t.Fatalf("latest = %s after the insert", Latest(got))
+	}
+	if again := Insert(got, "1.0.0-beta.1", section); again != got {
+		t.Fatal("a version already named must leave the changelog unchanged")
+	}
+	if got := Insert("# Changelog\n", "1.0.0", Section("1.0.0", "2026-10-05", "", nil)); got != "# Changelog\n\n## 1.0.0 — 2026-10-05\n\n" {
+		t.Fatalf("inserted = %q, want the section after the title", got)
 	}
 }
 
