@@ -1,5 +1,5 @@
 - [ ] **TSK-15.3.8** The install scripts default to the newest changelog version and lint checks it
-  - files: `install.sh`, `install.ps1`, `internal/install/install.go`, `internal/install/install_test.go`
+  - files: `install.sh`, `install.ps1`, `internal/install/install.go`, `internal/install/install_test.go`, `internal/install/scripts.go`
   - accept: KOMODO_VERSION's default in both scripts equals `v` plus the newest CHANGELOG.md heading
   - accept: lint's ScriptProblems names a script whose default lags
   - done_when: `go test ./internal/install/...`, `go run ./cmd/komodo lint`
