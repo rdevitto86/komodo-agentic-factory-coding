@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/changelog"
 )
 
 // trackedRepo makes a fresh git repo a test can commit tracked fixture files into.
@@ -412,5 +414,61 @@ func TestApplyWritesEachFileWholeAndLeavesNoTemp(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
 		t.Fatalf("dir holds %d entries; a temp file was left behind", len(entries))
+	}
+}
+
+func TestAnInstallerDefaultMustBeTheNewestChangelogVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, rel, body, want string
+	}{
+		{"sh current", "install.sh", `x/${KOMODO_VERSION:-v1.0.0-beta.5}"`, ""},
+		{"sh lags", "install.sh", `x/${KOMODO_VERSION:-v1.0.0-beta.2}"`, "install.sh: defaults KOMODO_VERSION to v1.0.0-beta.2"},
+		{"ps1 current", "install.ps1", `else { 'https://x' })/$(if ($env:KOMODO_VERSION) { $env:KOMODO_VERSION } else { 'v1.0.0-beta.5' })`, ""},
+		{"ps1 lags", "install.ps1", `else { 'v1.0.0-beta.4' })`, "install.ps1: defaults KOMODO_VERSION to v1.0.0-beta.4"},
+		{"no default", "install.sh", "exec komodo install\n", "install.sh: names no default KOMODO_VERSION"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := defaultVersionProblem(tc.rel, tc.body, "1.0.0-beta.5")
+			if (tc.want == "") != (got == "") || !strings.HasPrefix(got, tc.want) {
+				t.Fatalf("problem = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestScriptProblemsNamesAnInstallerDefaultThatLagsTheChangelog(t *testing.T) {
+	root := scriptRepo(t, map[string]string{
+		"CHANGELOG.md": "# Changelog\n\n## 1.0.0-beta.5 — 2026-10-04\n\n## 1.0.0-beta.4 — 2026-10-02\n",
+		"install.sh":   "#!/bin/sh\nbase=\"x/${KOMODO_VERSION:-v1.0.0-beta.2}\"\n",
+		"install.ps1":  "$v = $(if ($env:KOMODO_VERSION) { $env:KOMODO_VERSION } else { 'v1.0.0-beta.5' })\n",
+	})
+	got := strings.Join(ScriptProblems(root), "\n")
+	if !strings.Contains(got, "install.sh: defaults KOMODO_VERSION to v1.0.0-beta.2") {
+		t.Fatalf("problems = %q, want the lagging install.sh named", got)
+	}
+	if strings.Contains(got, "install.ps1: defaults") {
+		t.Fatalf("problems = %q; install.ps1 matches the changelog", got)
+	}
+}
+
+func TestTheCommittedInstallersDefaultToTheNewestChangelogVersion(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	text, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := changelog.Latest(string(text))
+	for _, rel := range []string{"install.sh", "install.ps1"} {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if problem := defaultVersionProblem(rel, string(data), latest); problem != "" {
+			t.Fatal(problem)
+		}
 	}
 }

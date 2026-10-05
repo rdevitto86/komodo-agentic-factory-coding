@@ -17,6 +17,8 @@ import (
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/lease"
+	"komodo/internal/ledger"
+	"komodo/internal/mount"
 )
 
 // StateDir is where a run's own files live, gitignored, never committed.
@@ -31,6 +33,22 @@ type RunState struct {
 	Worktree string     `json:"worktree"`
 	Waves    [][]string `json:"waves,omitempty"`
 	Started  time.Time  `json:"started"`
+	// Binary is the cutting binary's <version> (<commit>), fixed for the run's life.
+	Binary string `json:"binary,omitempty"`
+}
+
+// runningBinary names the running komodo as its version command prints it; tests swap it.
+var runningBinary = func() string {
+	path, err := mount.Executable()
+	// A test binary would rerun its own tests when asked for its version.
+	if err != nil || strings.HasSuffix(strings.TrimSuffix(filepath.Base(path), ".exe"), ".test") {
+		return ""
+	}
+	version, commit := mount.BinaryBuild(path)
+	if version == "" {
+		return ""
+	}
+	return version + " (" + commit + ")"
 }
 
 // DefaultBase is the remote's default branch, falling back to main.
@@ -191,7 +209,7 @@ func WorktreePath(root, worktree string) string {
 }
 
 // RunsDir holds one directory per group a run has cut, under StateDir.
-const RunsDir = "runs"
+const RunsDir = ledger.RunsDir
 
 // RunDir is where one group's run keeps its record, lock, ship handoff, and live status.
 func RunDir(root, group string) string {

@@ -50,6 +50,23 @@ type Entry struct {
 	Findings     int       `json:"findings,omitempty"`
 	Lines        int       `json:"lines,omitempty"`
 	Checks       []Check   `json:"checks,omitempty"`
+	Binary       string    `json:"binary,omitempty"`
+}
+
+// RunsDir holds one directory per open group, each with the run.json its cut saved.
+const RunsDir = "runs"
+
+// runBinary is the binary a group's run.json recorded at its cut, or "" when it records none.
+func (l *Ledger) runBinary(group string) string {
+	data, err := os.ReadFile(filepath.Join(l.Dir, RunsDir, filepath.Base(group), "run.json"))
+	if err != nil {
+		return ""
+	}
+	var run struct {
+		Binary string `json:"binary"`
+	}
+	_ = json.Unmarshal(data, &run)
+	return run.Binary
 }
 
 // Check is one command a station ran, its kind (compile or verify), and its exit code.
@@ -86,6 +103,9 @@ func (l *Ledger) path(name string) string { return filepath.Join(l.Dir, name) }
 func (l *Ledger) Stamp(entry Entry) error {
 	if entry.At.IsZero() {
 		entry.At = time.Now().UTC()
+	}
+	if entry.Binary == "" && entry.Group != "" {
+		entry.Binary = l.runBinary(entry.Group)
 	}
 	name := RunFile
 	if entry.Run == "" {

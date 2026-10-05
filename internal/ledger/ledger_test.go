@@ -40,6 +40,37 @@ func TestStampRoundTripsASessionsCost(t *testing.T) {
 	}
 }
 
+// TestStampCopiesTheBinaryItsRunRecorded proves every entry of a group carries the binary run.json fixed at cut.
+func TestStampCopiesTheBinaryItsRunRecorded(t *testing.T) {
+	dir := t.TempDir()
+	run := filepath.Join(dir, RunsDir, "TG-1.1", "run.json")
+	if err := os.MkdirAll(filepath.Dir(run), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(run, []byte(`{"group":"TG-1.1","binary":"1.0.0-beta.6 (0123456789ab)"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	book := New(dir)
+	for _, entry := range []Entry{
+		{Run: "r1", Group: "TG-1.1", Station: "build"},
+		{Run: "r1", Group: "TG-1.2", Station: "build"},
+		{Run: "r1", Group: "TG-1.1", Station: "review", Binary: "explicit (x)"},
+	} {
+		if err := book.Stamp(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := book.Read(RunFile)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("entries = %+v, %v", entries, err)
+	}
+	for index, want := range []string{"1.0.0-beta.6 (0123456789ab)", "", "explicit (x)"} {
+		if entries[index].Binary != want {
+			t.Fatalf("entry %d binary = %q, want %q", index, entries[index].Binary, want)
+		}
+	}
+}
+
 func TestStampWithoutARunGoesToTheAdhocFile(t *testing.T) {
 	book := New(t.TempDir())
 	if err := book.Stamp(Entry{Station: "add"}); err != nil {

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/install"
 	"komodo/internal/mount"
@@ -1167,6 +1168,129 @@ func TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping(t *testing.T)
 	}
 }
 
+// v1Rendered and v1Marked are when a fixture's first-line install copied its files, then wrote its markers.
+var v1Rendered, v1Marked = time.Now().Add(-2 * time.Hour), time.Now().Add(-time.Hour)
+
+// writeAt writes body at rel under dir and dates the file and its folder at.
+func writeAt(t *testing.T, dir, rel, body string, at time.Time) {
+	t.Helper()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, touched := range []string{path, filepath.Dir(path)} {
+		if err := os.Chtimes(touched, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestTheGlobalRenderWritesTheRulesAndLeavesClaudeMdAlone proves ~/.claude/AGENTS.md holds the rendered rules,
+// the marker lists it, and the CLAUDE.md importing it keeps its bytes.
+func TestTheGlobalRenderWritesTheRulesAndLeavesClaudeMdAlone(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claude := filepath.Join(home, Dir)
+	writeAt(t, claude, "CLAUDE.md", "@AGENTS.md\n", time.Now())
+	writeAt(t, claude, globalRules, "a hand-written copy that still says BACKLOG.md\n", time.Now())
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := mount.Rules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(claude, globalRules)); string(data) != rules {
+		t.Fatalf("AGENTS.md = %q, want the rendered rules", data)
+	}
+	if marker, _ := os.ReadFile(filepath.Join(claude, globalSkillsMarker)); !slices.Contains(strings.Fields(string(marker)), globalRules) {
+		t.Fatalf("marker = %q, want it to list %s", marker, globalRules)
+	}
+	if data, _ := os.ReadFile(filepath.Join(claude, "CLAUDE.md")); string(data) != "@AGENTS.md\n" {
+		t.Fatalf("CLAUDE.md = %q, want it left alone", data)
+	}
+	if _, err := os.Stat(filepath.Join(claude, "skills", globalRules)); !os.IsNotExist(err) {
+		t.Fatalf("the marker's rules line was read as a skill: %v", err)
+	}
+}
+
+// TestTheGlobalRenderRemovesTheFirstLinesAgents proves a V1-marked agents folder goes whole.
+func TestTheGlobalRenderRemovesTheFirstLinesAgents(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claude := filepath.Join(home, Dir)
+	writeAt(t, claude, "agents/builder.md", "v1", v1Rendered)
+	writeAt(t, claude, filepath.Join("agents", globalSkillsMarker), "rendered by komodo install; safe to replace\n", v1Marked)
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(claude, "agents")); !os.IsNotExist(err) {
+		t.Fatalf("the V1 agents folder survived the render: %v", err)
+	}
+}
+
+// TestTheGlobalRenderRemovesTheFirstLinesRender lays out a first-line install under HOME, then a skill the person
+// added later, and proves the render removes every V1 file but the person's skill before writing its marker.
+func TestTheGlobalRenderRemovesTheFirstLinesRender(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claude := filepath.Join(home, Dir)
+	for _, rel := range []string{"skills/adhoc/SKILL.md", "skills/standards-go/SKILL.md", "skills/run/SKILL.md", "standards/go.md"} {
+		writeAt(t, claude, rel, "v1", v1Rendered)
+	}
+	for _, folder := range []string{"skills", "standards"} {
+		writeAt(t, claude, filepath.Join(folder, globalSkillsMarker), "rendered by komodo install; safe to replace\n", v1Marked)
+	}
+	writeAt(t, claude, globalSkillsMarker,
+		"rendered by komodo install; AGENTS.md, skills, standards are replaced on the next run\n", v1Marked)
+	writeAt(t, claude, "skills/mine/SKILL.md", "the person's own", time.Now())
+
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerAt := slices.IndexFunc(plan.Changes, func(c install.Change) bool { return c.Path == filepath.Join(claude, globalSkillsMarker) })
+	for index, change := range plan.Changes {
+		if change.Remove && strings.HasPrefix(change.Path, filepath.Join(claude, "skills", "rendered")) {
+			t.Fatalf("the V1 root marker's words were read as skill names: %s", change.Path)
+		}
+		if change.Remove && index > markerAt {
+			t.Fatalf("%s is removed after the new marker is written", change.Path)
+		}
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"skills/adhoc", "skills/standards-go", "skills/" + globalSkillsMarker, "standards"} {
+		if _, err := os.Stat(filepath.Join(claude, rel)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived the render: %v", rel, err)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(claude, "skills", "mine", "SKILL.md")); err != nil || string(data) != "the person's own" {
+		t.Fatalf("the person's own skill = %q, %v; want it kept", data, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(claude, "skills", "run", "SKILL.md")); string(data) == "v1" {
+		t.Fatal("the run skill still holds the first line's body")
+	}
+	if data, _ := os.ReadFile(filepath.Join(claude, globalSkillsMarker)); string(data) != string(globalMarker()) {
+		t.Fatalf("marker = %q, want this render's", data)
+	}
+}
+
 // TestTheGlobalHookNamesTheFixedBinary proves the global settings name ~/.komodo/bin/komodo, never the
 // toolkit repo's own binary path.
 func TestTheGlobalHookNamesTheFixedBinary(t *testing.T) {
@@ -1193,6 +1317,47 @@ func TestTheGlobalHookNamesTheFixedBinary(t *testing.T) {
 	}
 	if fixed, _ := mount.HookPath(); !strings.Contains(string(raw), fixed) {
 		t.Fatalf("settings.json = %s, want the fixed binary %s", raw, fixed)
+	}
+}
+
+// TestTheStaleCheckNamesEachGlobalFileThatDiffersFromItsSource renders the global layer, finds it fresh, then
+// edits a skill and a hook and finds exactly those two named.
+func TestTheStaleCheckNamesEachGlobalFileThatDiffersFromItsSource(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := staleGlobal(root); got != nil {
+		t.Fatalf("staleGlobal = %v; a home with no global layer names nothing", got)
+	}
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("toolkit binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if got := staleGlobal(root); len(got) != 0 {
+		t.Fatalf("staleGlobal = %v right after a render, want nothing", got)
+	}
+	skill := filepath.Join(home, Dir, "skills", "run", "SKILL.md")
+	if err := os.WriteFile(skill, []byte("an older run skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(home, Dir, "settings.json")
+	raw, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed, _ := mount.HookPath()
+	if err := os.WriteFile(settings, []byte(strings.ReplaceAll(string(raw), fixed, "/old/bin/komodo")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := staleGlobal(root); !slices.Equal(got, []string{skill, settings}) {
+		t.Fatalf("staleGlobal = %v, want the edited skill and settings", got)
 	}
 }
 
