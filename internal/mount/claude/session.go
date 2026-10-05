@@ -101,8 +101,8 @@ func Session(
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 	env = setEnv(env, "CLAUDE_CODE_TMPDIR", SessionTmp(worktree))
-	// An empty template dir makes git init copy no templates, so it writes no .git/hooks the sandbox refuses.
-	env = setEnv(env, "GIT_TEMPLATE_DIR", "")
+	// A template holding only an empty hooks dir gives git init a .git/hooks to write into, with no sample hooks.
+	env = setEnv(env, "GIT_TEMPLATE_DIR", GitTemplate(worktree))
 
 	return argv, env, prompt, nil
 }
@@ -143,6 +143,12 @@ func SessionTmp(worktree string) string {
 		}
 	}
 	return filepath.Join(base, "komodo-"+hex.EncodeToString(sum[:6]))
+}
+
+// GitTemplate is the git template dir a worktree's sessions use: under the session temp root, holding only an
+// empty hooks directory.
+func GitTemplate(worktree string) string {
+	return filepath.Join(SessionTmp(worktree), "git-template")
 }
 
 // toolNames maps Komodo verbs to this host's tool names for the --tools flag.

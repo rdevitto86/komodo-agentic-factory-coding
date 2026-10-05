@@ -403,9 +403,13 @@ func TestSessionEnvMakesGitInitWriteNoHooks(t *testing.T) {
 			template = append(template, entry)
 		}
 	}
-	if len(template) != 1 || template[0] != "GIT_TEMPLATE_DIR=" {
-		t.Fatalf("GIT_TEMPLATE_DIR entries = %v, want one empty value", template)
+	if len(template) != 1 || template[0] != "GIT_TEMPLATE_DIR="+GitTemplate("/worktree") {
+		t.Fatalf("GIT_TEMPLATE_DIR entries = %v, want one naming the session's template", template)
 	}
+	if err := os.MkdirAll(filepath.Join(GitTemplate("/worktree"), "hooks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(SessionTmp("/worktree")) })
 
 	// The repo's tests run a non-bare git init under GOTMPDIR, which the sandbox allows only outside the worktree.
 	tmp := ""
@@ -426,8 +430,9 @@ func TestSessionEnvMakesGitInitWriteNoHooks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repo, ".git", "config")); err != nil {
 		t.Fatalf("git init made no repo: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repo, ".git", "hooks")); !os.IsNotExist(err) {
-		t.Fatalf("git init wrote a hooks dir (stat err %v); the session's env must suppress templates", err)
+	hooks, err := os.ReadDir(filepath.Join(repo, ".git", "hooks"))
+	if err != nil || len(hooks) != 0 {
+		t.Fatalf("hooks dir = %v, %v; want an empty one a test can write a hook into", hooks, err)
 	}
 }
 

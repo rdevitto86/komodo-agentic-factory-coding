@@ -110,7 +110,7 @@ func (s *session) closeLogs() {
 func (m *Mount) holdTmp() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(GitTemplate(m.worktree), "hooks"), 0o700); err != nil {
 		return fmt.Errorf("making the session's temp root: %w", err)
 	}
 	m.running++
