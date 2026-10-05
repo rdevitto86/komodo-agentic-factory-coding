@@ -3,6 +3,8 @@ package line
 import (
 	"context"
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -120,17 +122,49 @@ func cutEpicBranch(root, branch string) error {
 // ReadyEpic marks the epic pull request at url ready, refusing while its diff adds a backlog file
 // or the changelog names no heading for its version.
 func ReadyEpic(root, version string, client *pr.Client, url string, draft bool) error {
-	if err := epicReadyProblem(root, version); err != nil {
+	if err := epicReadyProblem(root, version, StartRef(root, EpicBranchName(version))); err != nil {
 		return err
 	}
 	return markReady(client, url, draft)
 }
 
-// epicReadyProblem names, in one error, the task files the epic branch adds over main and a
-// missing heading for version in that branch's change log.
-func epicReadyProblem(root, version string) error {
+// ReadyEndingEpic marks the epic pull request ready once head, the group about to land on its epic
+// branch, deletes the epic's index file; it refuses as ReadyEpic does, judged at head.
+func ReadyEndingEpic(root string, plan *Plan, client *pr.Client, head string) error {
+	branch := EpicBranchName(plan.Version)
+	if branch == "" || plan.Base != branch || client == nil {
+		return nil
+	}
+	for _, ref := range []string{branch, "main"} {
+		if err := Fetch(root, ref); err != nil {
+			return err
+		}
+	}
+	deleted, err := git.Run(root, "diff", "--name-only", "--diff-filter=D", "origin/"+branch+"..."+head, "--", backlog.GroupFilesDir)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(strings.Fields(deleted), func(file string) bool { return path.Base(file) == backlog.EpicFileName }) {
+		return nil
+	}
+	if err := epicReadyProblem(root, plan.Version, head); err != nil {
+		return err
+	}
+	pull, err := client.View(branch)
+	if err != nil {
+		return err
+	}
+	if pull.State != "OPEN" {
+		return nil
+	}
+	return markReady(client, pull.URL, pull.Draft)
+}
+
+// epicReadyProblem names, in one error, the task files head adds over main and a missing heading
+// for version in head's change log.
+func epicReadyProblem(root, version, head string) error {
 	branch := EpicBranchName(version)
-	head, base := StartRef(root, branch), StartRef(root, "main")
+	base := StartRef(root, "main")
 	added, err := git.Run(root, "diff", "--name-only", "--diff-filter=A", base+"..."+head, "--", backlog.GroupFilesDir)
 	if err != nil {
 		return err

@@ -297,18 +297,15 @@ func ShipGroupContext(
 		result.Labels = append(wip, kept...)
 		return result, nil
 	}
-	ready := markReady
-	if plan.Branch == EpicBranchName(plan.Version) {
-		ready = func(client *pr.Client, url string, draft bool) error {
-			return ReadyEpic(root, plan.Version, client, url, draft)
-		}
-	}
-	if err := ready(client, url, draft); err != nil {
+	if err := markReady(client, url, draft); err != nil {
 		result.Labels = append(wip, kept...)
 		result.Warnings = append(result.Warnings, fmt.Sprintf("could not mark the PR ready for review: %v", err))
 		return result, nil
 	}
 	result.Labels, result.Draft, result.Ready = kept, false, true
+	if err := ReadyEndingEpic(root, plan, client, tip); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("the epic pull request stays a draft: %v", err))
+	}
 	return result, nil
 }
 

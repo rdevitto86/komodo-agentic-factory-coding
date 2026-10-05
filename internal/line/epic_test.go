@@ -275,3 +275,85 @@ func TestReadyEpicRefusesABacklogFileAndAMissingChangelogHeading(t *testing.T) {
 		t.Fatalf("calls = %v, want the draft marked ready", calls)
 	}
 }
+
+// landedEpic pushes an epic branch with an epic folder and an old changelog, and a forge whose
+// epic pull request is an open draft.
+func landedEpic(t *testing.T) (string, *pr.Client, *[]string) {
+	t.Helper()
+	root := epicRepo(t)
+	runGit(t, root, "checkout", "-q", "-b", "epic")
+	commit(t, root, "docs/backlog/epic-05/EPIC.md", "# EPIC-05\n", "an epic folder")
+	commit(t, root, "docs/backlog/epic-05/tg-05.1/TG.md", "# TG-05.1\n", "a group")
+	commit(t, root, "CHANGELOG.md", "# Changelog\n\n## 1.0.0 — 2026-09-30\n\n- old\n", "a changelog")
+	runGit(t, root, "push", "-q", "origin", "epic:refs/heads/feat/2.0.0")
+	calls := &[]string{}
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		*calls = append(*calls, joined)
+		if strings.HasPrefix(joined, "pr view feat/2.0.0") {
+			return `{"number":9,"url":"https://example.com/pull/9","state":"OPEN","isDraft":true}`, nil
+		}
+		return "", nil
+	}}
+	return root, client, calls
+}
+
+// cutGroup commits work on a group branch cut from the epic tip, the head a ship hands the epic gate.
+func cutGroup(t *testing.T, root, group string, work func()) string {
+	t.Helper()
+	runGit(t, root, "checkout", "-q", "-b", group, "epic")
+	work()
+	return group
+}
+
+func TestReadyEndingEpicRefusesTheLastGroupWhileTheEpicIsUnfinished(t *testing.T) {
+	root, client, calls := landedEpic(t)
+	plan := &Plan{Group: "TG-05.1", Base: "feat/2.0.0", Version: "2.0.0"}
+	middle := cutGroup(t, root, "middle", func() { commit(t, root, "mid.txt", "mid\n", "a middle group") })
+	if err := ReadyEndingEpic(root, plan, client, middle); err != nil || len(*calls) != 0 {
+		t.Fatalf("err = %v, calls = %v; a group that leaves the epic open touches no pull request", err, *calls)
+	}
+	last := cutGroup(t, root, "last", func() {
+		runGit(t, root, "rm", "-q", "docs/backlog/epic-05/EPIC.md")
+		runGit(t, root, "commit", "-q", "-m", "the last group ends the epic")
+	})
+	err := ReadyEndingEpic(root, plan, client, last)
+	if err == nil || !strings.Contains(err.Error(), "docs/backlog/epic-05/tg-05.1/TG.md") ||
+		!strings.Contains(err.Error(), "CHANGELOG.md has no heading for 2.0.0") {
+		t.Fatalf("err = %v, want the added backlog file and the missing heading named", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("calls = %v; a refused epic must stay a draft", *calls)
+	}
+}
+
+func TestReadyEndingEpicReadiesTheEpicPullOnceItsLastGroupFinishesIt(t *testing.T) {
+	root, client, calls := landedEpic(t)
+	last := cutGroup(t, root, "last", func() {
+		runGit(t, root, "rm", "-r", "-q", "docs/backlog")
+		commit(t, root, "CHANGELOG.md", "# Changelog\n\n## 2.0.0 — 2026-10-05\n\n- new\n\n## 1.0.0 — 2026-09-30\n\n- old\n", "finish the epic")
+	})
+	if err := ReadyEndingEpic(root, &Plan{Group: "TG-05.1", Base: "main", Version: "2.0.0"}, client, last); err != nil || len(*calls) != 0 {
+		t.Fatalf("err = %v, calls = %v; a group that targets no epic branch touches no pull request", err, *calls)
+	}
+	plan := &Plan{Group: "TG-05.1", Base: "feat/2.0.0", Version: "2.0.0"}
+	offline := &pr.Client{Dir: root, Run: func(string, ...string) (string, error) { return "", fmt.Errorf("gh: offline") }}
+	if err := ReadyEndingEpic(root, plan, offline, last); err == nil || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("err = %v, want the failed lookup named", err)
+	}
+	closed := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		if args[1] != "view" {
+			t.Fatalf("a closed epic pull request is left alone: %v", args)
+		}
+		return `{"number":9,"url":"https://example.com/pull/9","state":"CLOSED","isDraft":true}`, nil
+	}}
+	if err := ReadyEndingEpic(root, plan, closed, last); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadyEndingEpic(root, plan, client, last); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 2 || (*calls)[1] != "pr ready https://example.com/pull/9" {
+		t.Fatalf("calls = %v, want the epic pull request viewed, then marked ready", *calls)
+	}
+}
