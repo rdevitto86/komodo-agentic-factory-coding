@@ -2,5 +2,5 @@
 
 ```yaml
 type: fix
-depends_on: [TG-15.1]
+depends_on: [TG-15.1, TG-15.20]
 ```
