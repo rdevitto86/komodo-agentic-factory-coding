@@ -142,23 +142,15 @@ func knownLabel(known []string, name string) string {
 	return ""
 }
 
-// epicTitle is the epic's heading text with its goal line stripped.
+// epicTitle is the epic's the epic index file title.
 func epicTitle(epic backlog.Epic) string {
-	if idx := strings.Index(epic.Title, " *Goal:"); idx >= 0 {
-		return epic.Title[:idx]
-	}
-	return epic.Title
+	return strings.TrimSpace(epic.Title)
 }
 
-// epicGoal is the sentence the epic's Goal line states, without its Ships as clause or markup.
+// epicGoal is the epic's goal paragraph, its title when the epic index file states none.
 func epicGoal(epic backlog.Epic) string {
-	idx := strings.Index(epic.Title, "*Goal:")
-	if idx < 0 {
-		return ""
+	if goal := strings.TrimSpace(epic.Goal); goal != "" {
+		return goal
 	}
-	rest := epic.Title[idx+len("*Goal:"):]
-	if i := strings.Index(rest, "Ships as `"); i >= 0 {
-		rest = rest[:i]
-	}
-	return strings.TrimSpace(rest)
+	return epicTitle(epic)
 }

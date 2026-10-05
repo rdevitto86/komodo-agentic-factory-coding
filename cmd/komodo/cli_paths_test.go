@@ -39,7 +39,7 @@ func TestGlobalGuardAndHookExitZeroOutsideAGitRepo(t *testing.T) {
 func TestLintFailsOnATaskWithNoDoneWhen(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-q")
-	writeGroupFile(t, root, "TG-91.1-g.md",
+	seedGroup(t, root,
 		"## [TG-91.1] G [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-91\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-91.1.1** No proof\n  - files: `a.go`\n")
 	got := runCLI(t, root, "", "lint")
@@ -192,13 +192,14 @@ func TestGateRunsTheReposOwnCompileAndVerifyCommands(t *testing.T) {
 	}
 }
 
-// fakeGh puts a gh on PATH that answers a pull request view and the review-thread calls.
+// fakeGh puts a gh on PATH that answers a pull request view or create and the review-thread calls.
 func fakeGh(t *testing.T) {
 	t.Helper()
 	bin := t.TempDir()
 	script := `#!/bin/sh
 case "$*" in
   "pr view"*) echo '{"number":7,"url":"https://example.invalid/pr/7","state":"OPEN","title":"t","isDraft":false}' ;;
+  "pr create"*) echo 'https://example.invalid/pr/8' ;;
   *resolveReviewThread*) echo '{"data":{}}' ;;
   "api graphql"*) echo '{"data":{"resource":{"reviewThreads":{"nodes":[` +
 		`{"id":"T1","isResolved":false,"path":"a.go","line":3,"comments":{"nodes":[{"body":"fix it","author":{"login":"r"}}]}},` +

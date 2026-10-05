@@ -81,8 +81,8 @@ func TestCloseRecordsDoneInTheRunWhenEverythingPasses(t *testing.T) {
 	if got := LoadStatus(root)["TSK-08.1.1"]; got.Status != "DONE" {
 		t.Fatalf("status = %+v; the run must record DONE", got)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-08.1-a-group.md"))
-	if !strings.Contains(string(data), "- [ ] **TSK-08.1.1**") {
+	data := readGroupText(t, root, "TG-08.1")
+	if !strings.Contains(data, "- [ ] **TSK-08.1.1**") {
 		t.Fatal("close edited the group file; the status lives in the run until ship")
 	}
 }
@@ -161,8 +161,8 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 	if got.Status != "BLOCKED" {
 		t.Fatalf("status = %+v; the blocked status was not recorded", got)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-08.1-a-group.md"))
-	if strings.Contains(string(data), "[BLOCKED]") || strings.Contains(string(data), "status: BLOCKED") {
+	data := readGroupText(t, root, "TG-08.1")
+	if strings.Contains(data, "[BLOCKED]") || strings.Contains(data, "status: BLOCKED") {
 		t.Fatal("close edited the group file; the status lives in the run until ship")
 	}
 }

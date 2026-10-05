@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/pr"
@@ -21,23 +22,14 @@ import (
 const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - true\n```\n"
 
-// commitBacklogText commits legacy-grammar text into root as its group's own docs/backlog file,
-// the shape backlogtest.SeedText writes to disk, in one commit under message.
+// commitBacklogText commits legacy-grammar text into root as the tree backlogtest.SeedText writes,
+// in one commit under message.
 func commitBacklogText(t *testing.T, root, text, message string) {
 	t.Helper()
 	staged := t.TempDir()
 	backlogtest.SeedText(t, staged, text)
-	entries, err := os.ReadDir(filepath.Join(staged, "docs", "backlog"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join(staged, "docs", "backlog", entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		commit(t, root, filepath.Join("docs", "backlog", entry.Name()), string(data), message)
-	}
+	copyBacklogTree(t, staged, root)
+	commitAll(t, root, message)
 }
 
 // shipRepo builds a group worktree and a main checkout, both remoted at a bare origin, so
@@ -486,7 +478,7 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	root := t.TempDir()
 	closed := strings.Replace(flipBacklog, "[READY]", "[DONE]", 1)
 	backlogtest.SeedText(t, root, closed)
-	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-11.1-a-group.md")
+	rootGroupFile := taskPath(root, "TSK-11.1.1")
 	wantStale, err := os.ReadFile(rootGroupFile)
 	if err != nil {
 		t.Fatal(err)
@@ -501,11 +493,8 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
 		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself and not before", err)
 	}
-	shipped, err := os.ReadFile(filepath.Join(worktree, "docs", "backlog", "TG-11.1-a-group.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(shipped), "- [x] **TSK-11.1.1**") {
+	shipped := readGroupText(t, worktree, "TG-11.1")
+	if !strings.Contains(shipped, "- [x] **TSK-11.1.1**") {
 		t.Fatalf("the branch being pushed still says READY:\n%s", shipped)
 	}
 	stale, err := os.ReadFile(rootGroupFile)
@@ -528,11 +517,8 @@ func TestShipNeverMarksATaskItSkippedAsDone(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	_, _ = ShipGroup(root, plan, nil, nil)
-	shipped, err := os.ReadFile(filepath.Join(worktree, "docs", "backlog", "TG-11.1-a-group.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(shipped), "- [x]") {
+	shipped := readGroupText(t, worktree, "TG-11.1")
+	if strings.Contains(shipped, "- [x]") {
 		t.Fatalf("a task close never marked DONE shipped as DONE:\n%s", shipped)
 	}
 }
@@ -658,11 +644,8 @@ func TestShipRetriedAroundAFailedPushDoesNotFileAFindingTwice(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
 		t.Fatalf("err = %v; a retried ship must fail the same way", err)
 	}
-	shipped, err := os.ReadFile(filepath.Join(worktree, "docs", "backlog", "TG-11.1-a-group.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(string(shipped), "a/one.go:1 t") != 1 {
+	shipped := readGroupText(t, worktree, "TG-11.1")
+	if strings.Count(shipped, "a/one.go:1 t") != 1 {
 		t.Fatalf("a retry must not file the same finding a second time:\n%s", shipped)
 	}
 }
@@ -729,7 +712,7 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 		commitBacklogText(t, worktree, flipBacklog, "the backlog")
 		root := t.TempDir()
 		backlogtest.SeedText(t, root, flipBacklog)
-		rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-11.1-a-group.md")
+		rootGroupFile := taskPath(root, "TSK-11.1.1")
 		wantRoot, err := os.ReadFile(rootGroupFile)
 		if err != nil {
 			t.Fatal(err)
@@ -745,7 +728,7 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 		unreachableOrigin(t, root)
 		saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 		_, _ = ShipGroup(root, plan, nil, nil)
-		committed, err := git.Run(worktree, "show", "HEAD:docs/backlog/TG-11.1-a-group.md")
+		committed, err := git.Run(worktree, "show", "HEAD:"+relTaskPath("TSK-11.1.1"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -766,21 +749,28 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 }
 
 func TestShipKeepsAPersonsEditToATaskBodyAndChangesOnlyTheTick(t *testing.T) {
-	edited := "## [TG-11.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-		"- [ ] **TSK-11.1.1** One\n  - files: `a/one.go`\n  - done_when: `go test ./a/...`\n" +
-		"\nA person's note under the task, kept byte for byte.\n\n" +
-		"- [ ] **TSK-11.1.2** Two\n  - files: `b/two.go`\n  - done_when: `go test ./b/...`\n" +
-		"  - context: `a person's added note`\n"
+	edited := map[string]string{
+		"docs/backlog/epic-11/EPIC.md": "## [EPIC-11] Epic eleven [READY]\n\n```yaml\nversion: 2.0.0\n```\n",
+		relGroupPath("TG-11.1"):        "## [TG-11.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n",
+		relTaskPath("TSK-11.1.1"): "- [ ] **TSK-11.1.1** One\n  - files: `a/one.go`\n  - done_when: `go test ./a/...`\n" +
+			"\nA person's note under the task, kept byte for byte.\n",
+		relTaskPath("TSK-11.1.2"): "- [ ] **TSK-11.1.2** Two\n  - files: `b/two.go`\n  - done_when: `go test ./b/...`\n" +
+			"  - context: `a person's added note`\n",
+	}
 	worktree := gitRepo(t)
-	commit(t, worktree, filepath.Join("docs", "backlog", "TG-11.1-a-group.md"), edited, "a person edits the plan")
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
+	for rel, text := range edited {
+		for _, dir := range []string{worktree, root} {
+			path := filepath.Join(dir, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
-	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-11.1-a-group.md")
-	if err := os.WriteFile(rootGroupFile, []byte(edited), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	commitAll(t, worktree, "a person edits the plan")
 	if err := RecordStatus(root, "TSK-11.1.1", "DONE"); err != nil {
 		t.Fatal(err)
 	}
@@ -795,21 +785,23 @@ func TestShipKeepsAPersonsEditToATaskBodyAndChangesOnlyTheTick(t *testing.T) {
 	unreachableOrigin(t, root)
 	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 	_, _ = ShipGroup(root, plan, nil, nil)
-	committed, err := git.Run(worktree, "show", "HEAD:docs/backlog/TG-11.1-a-group.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := strings.Replace(edited, "- [ ] **TSK-11.1.1**", "- [x] **TSK-11.1.1**", 1)
-	if strings.TrimSpace(committed) != strings.TrimSpace(want) {
-		t.Fatalf("the ship commit changed more than the tick:\n%s\nwant\n%s", committed, want)
-	}
-	if data, _ := os.ReadFile(rootGroupFile); string(data) != edited {
-		t.Fatal("ship rewrote the root's group file")
+	for rel, text := range edited {
+		committed, err := git.Run(worktree, "show", "HEAD:"+rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.Replace(text, "- [ ] **TSK-11.1.1**", "- [x] **TSK-11.1.1**", 1)
+		if strings.TrimSpace(committed) != strings.TrimSpace(want) {
+			t.Fatalf("the ship commit changed more than the tick in %s:\n%s\nwant\n%s", rel, committed, want)
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); string(data) != text {
+			t.Fatalf("ship rewrote the root's %s", rel)
+		}
 	}
 }
 
 func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
-	other := "### [TG-11.2] Another group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	other := "### [TG-11.2] Another group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-11.2.1] Other [P: C] [READY]\n```yaml\nfiles: [b/other.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
 	worktree := gitRepo(t)
 	commitBacklogText(t, worktree, flipBacklog, "the backlog")
@@ -829,14 +821,14 @@ func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
 	unreachableOrigin(t, root)
 	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 	_, _ = ShipGroup(root, plan, nil, nil)
-	shipped, err := git.Run(worktree, "show", "HEAD:docs/backlog/TG-11.1-a-group.md")
+	shipped, err := git.Run(worktree, "show", "HEAD:"+relTaskPath("TSK-11.1.1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(shipped, "- [x] **TSK-11.1.1**") {
 		t.Fatalf("the ship commit does not carry its own task's DONE:\n%s", shipped)
 	}
-	untouched, err := git.Run(worktree, "show", "HEAD:docs/backlog/TG-11.2-another-group.md")
+	untouched, err := git.Run(worktree, "show", "HEAD:"+relTaskPath("TSK-11.2.1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1477,7 +1469,7 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	root, _ := shipRepo(t)
 	refined := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go, a/two.go]\ndone_when:\n  - true\n  - echo more\ncontext: [docs/guide.md]\n```\n"
-	backlogtest.SeedText(t, root, refined)
+	reseed(t, root, refined)
 	plan := &Plan{
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
@@ -1776,7 +1768,7 @@ func prepareRepo(t *testing.T) (root, group string, plan *Plan) {
 	root, group = shipRepo(t)
 	ready := strings.Replace(shipBacklog, "[DONE]", "[READY]", 1)
 	for _, dir := range []string{root, group} {
-		backlogtest.SeedText(t, dir, ready)
+		reseed(t, dir, ready)
 	}
 	runGit(t, group, "commit", "-qam", "ready")
 	runGit(t, group, "branch", "main")
@@ -1819,14 +1811,14 @@ func TestPrepareCommitsTheTickedListWithNoTrailers(t *testing.T) {
 		t.Fatalf("commit = %q with trailers %q; want the conventional subject and no trailers", subject, trailers)
 	}
 	files, _ := git.Run(group, "show", "--name-only", "--format=", "HEAD")
-	for _, want := range []string{"docs/backlog/TG-09.1-a-group.md", "one.go"} {
+	for _, want := range []string{relTaskPath("TSK-09.1.1"), "one.go"} {
 		if !slices.Contains(strings.Fields(files), want) {
 			t.Fatalf("the commit holds %q, want %s in it", files, want)
 		}
 	}
-	// The group's only task is done, so its own group file leaves with the group.
+	// The group's only task is done, so its epic's whole folder leaves with the group.
 	if left, _ := git.Run(group, "ls-files", "docs/backlog"); left != "" {
-		t.Fatalf("group files still tracked: %q; a finished group with no epic deletes its own", left)
+		t.Fatalf("backlog files still tracked: %q; an epic's last group deletes the epic folder", left)
 	}
 	if status, _ := git.Run(group, "status", "--porcelain"); status != "" {
 		t.Fatalf("status = %q; prepare must commit every change", status)
@@ -1914,32 +1906,47 @@ func TestPrepareLeavesAConflictForARepairRoundThenFinishesTheRebase(t *testing.T
 
 func TestPrepareDeletesTheEpicsGroupFilesOnlyWithItsLastOpenGroup(t *testing.T) {
 	const (
-		shipping  = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.1.1** One\n"
-		openFile  = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.2.1** Two\n"
-		doneFile  = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [x] **TSK-02.2.1** Two\n"
-		elsewhere = "## [TG-03.1] Elsewhere [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-03\n```\n\n- [ ] **TSK-03.1.1** Three\n"
-		loose     = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\n```\n\n- [ ] **TSK-02.1.1** One\n"
+		epic      = "## [EPIC-02] Two [READY]\n\n```yaml\nversion: 1.0.0\n```\n"
+		otherEpic = "## [EPIC-03] Three [READY]\n\n```yaml\nversion: 1.0.0\n```\n"
+		shipping  = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\n```\n"
+		other     = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\n```\n"
+		elsewhere = "## [TG-03.1] Elsewhere [P: H] [READY]\n\n```yaml\ntype: feat\n```\n"
+		one       = "- [ ] **TSK-02.1.1** One\n"
+		openTwo   = "- [ ] **TSK-02.2.1** Two\n"
+		doneTwo   = "- [x] **TSK-02.2.1** Two\n"
+		three     = "- [ ] **TSK-03.1.1** Three\n"
 	)
 	cases := []struct {
 		name  string
 		files map[string]string
 		want  []string
 	}{
-		{"another group of the epic is open", map[string]string{"TG-02.1-a.md": shipping, "TG-02.2-b.md": openFile}, nil},
+		{"another group of the epic is open", map[string]string{
+			"docs/backlog/epic-02/EPIC.md": epic, relGroupPath("TG-02.1"): shipping, relTaskPath("TSK-02.1.1"): one,
+			relGroupPath("TG-02.2"): other, relTaskPath("TSK-02.2.1"): openTwo,
+		}, nil},
 		{"it is the epic's last open group", map[string]string{
-			"TG-02.1-a.md": shipping, "TG-02.2-b.md": doneFile, "TG-03.1-c.md": elsewhere,
-		}, []string{"TG-02.1-a.md", "TG-02.2-b.md"}},
-		{"it names no epic", map[string]string{"TG-02.1-a.md": loose, "TG-02.2-b.md": openFile}, []string{"TG-02.1-a.md"}},
+			"docs/backlog/epic-02/EPIC.md": epic, relGroupPath("TG-02.1"): shipping, relTaskPath("TSK-02.1.1"): one,
+			relGroupPath("TG-02.2"): other, relTaskPath("TSK-02.2.1"): doneTwo,
+			"docs/backlog/epic-03/EPIC.md": otherEpic, relGroupPath("TG-03.1"): elsewhere, relTaskPath("TSK-03.1.1"): three,
+		}, []string{
+			"docs/backlog/epic-02/EPIC.md", relGroupPath("TG-02.1"), relTaskPath("TSK-02.1.1"),
+			relGroupPath("TG-02.2"), relTaskPath("TSK-02.2.1"),
+		}},
+		{"its folder has no epic file", map[string]string{
+			relGroupPath("TG-02.1"): shipping, relTaskPath("TSK-02.1.1"): one,
+			relGroupPath("TG-02.2"): other, relTaskPath("TSK-02.2.1"): openTwo,
+		}, []string{relGroupPath("TG-02.1"), relTaskPath("TSK-02.1.1")}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			worktree := t.TempDir()
-			dir := filepath.Join(worktree, "docs", "backlog")
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			for name, text := range tc.files {
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			for rel, text := range tc.files {
+				path := filepath.Join(worktree, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1949,7 +1956,8 @@ func TestPrepareDeletesTheEpicsGroupFilesOnlyWithItsLastOpenGroup(t *testing.T) 
 			}
 			var got []string
 			for _, path := range ended {
-				got = append(got, filepath.Base(path))
+				rel, _ := filepath.Rel(worktree, path)
+				got = append(got, filepath.ToSlash(rel))
 			}
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("deleted = %v, want %v", got, tc.want)
@@ -2118,7 +2126,7 @@ func TestAnExpiredCredentialStopsShipWithABlockerNoteAndKomodoShipFinishesIt(t *
 	if _, err := os.Stat(HandoffPath(root, "TG-09.1")); err != nil {
 		t.Fatalf("no handoff for komodo ship to finish: %v", err)
 	}
-	noted, _ := git.Run(group, "show", "HEAD:docs/backlog/TG-09.1-a-group.md")
+	noted, _ := git.Run(group, "show", "HEAD:"+relGroupPath("TG-09.1"))
 	if !strings.Contains(noted, "komodo ship TG-09.1") || !strings.Contains(noted, "Authentication failed") {
 		t.Fatalf("the branch's backlog = %q, want a committed blocker note naming the fix", noted)
 	}
@@ -2134,7 +2142,7 @@ func TestAnExpiredCredentialStopsShipWithABlockerNoteAndKomodoShipFinishesIt(t *
 	if result.URL == "" || !result.Draft || !called(calls, "pr create", "--draft", "--head feat/a-group") {
 		t.Fatalf("result = %+v, calls = %q; want the PR opened as a draft", result, calls)
 	}
-	pushed, err := git.Run(bare, "show", "refs/heads/feat/a-group:docs/backlog/TG-09.1-a-group.md")
+	pushed, err := git.Run(bare, "show", "refs/heads/feat/a-group:"+relGroupPath("TG-09.1"))
 	if err != nil || strings.Contains(pushed, "komodo ship TG-09.1") {
 		t.Fatalf("pushed backlog = %q (%v); the note must be gone and the commits kept", pushed, err)
 	}
@@ -2456,22 +2464,59 @@ func TestPrepareStopsOnAConflictThatHasNoConflictedFile(t *testing.T) {
 }
 
 func TestPrepareCommitsTheDeletionOfAnEndedEpicsGroupFiles(t *testing.T) {
-	const (
-		shipping = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.1.1** One\n"
-		done     = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [x] **TSK-02.2.1** Two\n"
-	)
 	root := gitRepo(t)
-	commit(t, root, "docs/backlog/TG-02.2-b.md", done, "the other group")
-	commit(t, root, "docs/backlog/TG-02.1-a.md", shipping, "the shipping group")
+	backlogtest.Seed(t, root,
+		backlog.GroupFile{ID: "TG-02.2", Title: "Other", Priority: "H", Status: "READY", Type: "feat", Version: "1.0.0",
+			Tasks: []backlog.GroupTask{{ID: "TSK-02.2.1", Title: "Two", Done: true}}},
+		backlog.GroupFile{ID: "TG-02.1", Title: "Shipping", Priority: "H", Status: "READY", Type: "feat", Version: "1.0.0",
+			Tasks: []backlog.GroupTask{{ID: "TSK-02.1.1", Title: "One"}}},
+	)
+	commitAll(t, root, "the epic's groups")
 	plan := &Plan{Group: "TG-02.1", Title: "Shipping", Type: "feat", Base: "main", Branch: "main"}
 	if fixes, err := PrepareGroup(root, plan); err != nil || len(fixes) > 0 {
 		t.Fatalf("prepare = %q, %v", fixes, err)
 	}
 	if left, _ := git.Run(root, "ls-files", "docs/backlog"); left != "" {
-		t.Fatalf("group files still tracked: %q; the epic's last group deletes them", left)
+		t.Fatalf("backlog files still tracked: %q; the epic's last group deletes them", left)
 	}
 	if subject, _ := git.Run(root, "log", "-1", "--format=%s"); subject != "feat: Shipping (TG-02.1)" {
 		t.Fatalf("HEAD = %q, want the group's commit carrying the deletion", subject)
+	}
+}
+
+// TestPrepareDeletesTheWholeEpicFolderWithItsLastGroup proves the last group's commit removes the epic
+// folder entire: the epic index file, every the group index file and every task file, leaving other epics alone.
+func TestPrepareDeletesTheWholeEpicFolderWithItsLastGroup(t *testing.T) {
+	root := gitRepo(t)
+	backlogtest.Seed(t, root,
+		backlog.GroupFile{ID: "TG-02.1", Title: "Shipping", Priority: "H", Status: "READY", Type: "feat", Version: "1.0.0",
+			Tasks: []backlog.GroupTask{{ID: "TSK-02.1.1", Title: "One"}, {ID: "TSK-02.1.2", Title: "Two"}}},
+		backlog.GroupFile{ID: "TG-02.2", Title: "Other", Priority: "H", Status: "READY", Type: "feat", Version: "1.0.0",
+			Tasks: []backlog.GroupTask{{ID: "TSK-02.2.1", Title: "Three", Done: true}}},
+		backlog.GroupFile{ID: "TG-03.1", Title: "Elsewhere", Priority: "H", Status: "READY", Type: "feat", Version: "1.0.0",
+			Tasks: []backlog.GroupTask{{ID: "TSK-03.1.1", Title: "Four"}}},
+	)
+	commitAll(t, root, "two epics")
+	plan := &Plan{Group: "TG-02.1", Title: "Shipping", Type: "feat", Base: "main", Branch: "main",
+		Tasks: []PlanTask{{ID: "TSK-02.1.1", Title: "One"}, {ID: "TSK-02.1.2", Title: "Two"}}}
+	if fixes, err := PrepareGroup(root, plan); err != nil || len(fixes) > 0 {
+		t.Fatalf("prepare = %q, %v", fixes, err)
+	}
+	if _, err := os.Stat(backlog.EpicDir(root, "EPIC-02")); !os.IsNotExist(err) {
+		t.Fatalf("stat epic-02 = %v, want the whole folder gone", err)
+	}
+	deleted, _ := git.Run(root, "show", "--name-status", "--format=", "HEAD")
+	for _, want := range []string{
+		"D\tdocs/backlog/epic-02/EPIC.md", "D\t" + relGroupPath("TG-02.1"), "D\t" + relTaskPath("TSK-02.1.1"),
+		"D\t" + relTaskPath("TSK-02.1.2"), "D\t" + relGroupPath("TG-02.2"), "D\t" + relTaskPath("TSK-02.2.1"),
+	} {
+		if !strings.Contains(deleted, want) {
+			t.Fatalf("commit = %q, want %q deleted", deleted, want)
+		}
+	}
+	left, _ := git.Run(root, "ls-files", "docs/backlog")
+	if want := "docs/backlog/epic-03/EPIC.md\n" + relGroupPath("TG-03.1") + "\n" + relTaskPath("TSK-03.1.1"); left != want {
+		t.Fatalf("tracked = %q, want only the other epic %q", left, want)
 	}
 }
 
@@ -2495,7 +2540,7 @@ func TestPrepareTurnsARefusedPreCommitHookIntoAFix(t *testing.T) {
 
 func TestEndedEpicFilesFailsOnAGroupFileItCannotRead(t *testing.T) {
 	worktree := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog", "TG-02.1-a.md"), 0o755); err != nil {
+	if err := os.MkdirAll(groupPath(worktree, "TG-02.1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := endedEpicFiles(worktree, "TG-02.1"); err == nil {
@@ -2557,7 +2602,7 @@ func TestAFinishStillRefusedKeepsTheCredentialNoteOnTheBranch(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, nil); !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("ship = %v, want the push stopped for its credential", err)
 	}
-	backlogPath := filepath.Join(group, "docs", "backlog", "TG-09.1-a-group.md")
+	backlogPath := groupPath(group, "TG-09.1")
 	noted, err := os.ReadFile(backlogPath)
 	if err != nil || !strings.Contains(string(noted), "komodo ship TG-09.1") {
 		t.Fatalf("backlog = %q, %v; the first stop must leave its blocker note", noted, err)
@@ -2583,7 +2628,7 @@ func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
 			}
 		}},
 		{"a group file cannot be read", func(t *testing.T, _, group string, _ *Plan) {
-			if err := os.MkdirAll(filepath.Join(group, "docs", "backlog", "TG-09.1-a.md"), 0o755); err != nil {
+			if err := os.MkdirAll(groupPath(group, "TG-09.2"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -2675,7 +2720,7 @@ func TestShipBlockedKeepsTheNoteLocalWhenThePrePushGateRefuses(t *testing.T) {
 		!strings.HasPrefix(lines[0], "docs: A group is blocked") || !strings.HasPrefix(lines[1], "wip: A group") {
 		t.Fatalf("commits = %q, want the WIP commit then the note, both local", lines)
 	}
-	data, err := os.ReadFile(filepath.Join(group, "docs", "backlog", "TG-09.1-a-group.md"))
+	data, err := os.ReadFile(groupPath(group, "TG-09.1"))
 	if err != nil {
 		t.Fatal(err)
 	}

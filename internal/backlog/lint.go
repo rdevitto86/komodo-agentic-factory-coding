@@ -15,6 +15,70 @@ import (
 // MaxGroupTasks is the most buildable tasks one group holds before lint suggests a split.
 const MaxGroupTasks = 12
 
+// MaxGroupFiles is the most unique files a group's open tasks may declare, the size one review reads whole.
+const MaxGroupFiles = 20
+
+// DeclaredFiles are the unique paths a group's open tasks declare, in first-seen order.
+func DeclaredFiles(file GroupFile) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, task := range file.Tasks {
+		if task.Done {
+			continue
+		}
+		for _, path := range task.Files {
+			if !seen[path] {
+				seen[path] = true
+				out = append(out, path)
+			}
+		}
+	}
+	return out
+}
+
+// LintTree reports the tree's own problems: folder names, epic fields, the group cap per epic, and
+// the file cap per group, beyond what each assembled group file's lint reports.
+func LintTree(tree Tree) []string {
+	problems := append([]string(nil), tree.Problems...)
+	groupsPerEpic := map[string]int{}
+	for _, group := range tree.Groups {
+		groupsPerEpic[group.Epic.ID]++
+		if group.File.ID == "" {
+			continue
+		}
+		if declared := DeclaredFiles(group.File); len(declared) > MaxGroupFiles {
+			problems = append(problems, fmt.Sprintf("%s: open tasks declare %d files, over the cap of %d; split the group",
+				group.File.ID, len(declared), MaxGroupFiles))
+		}
+	}
+	for _, epic := range tree.Epics {
+		if epic.ID == "" {
+			continue
+		}
+		switch version := epic.Version; {
+		case version == "":
+			problems = append(problems, fmt.Sprintf("%s: no version; an epic declares the version it ships as `version: x.y.z`", epic.ID))
+		case !versionRe.MatchString(version):
+			problems = append(problems, fmt.Sprintf("%s: version %q is not x.y.z", epic.ID, version))
+		case !versionPhaseRe.MatchString(version):
+			problems = append(problems, fmt.Sprintf(
+				"%s: version %q must be x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n, the four phases alpha, beta, rc, stable",
+				epic.ID, version))
+		}
+		if epic.Type != "" && !contains(Types, epic.Type) {
+			problems = append(problems, fmt.Sprintf("%s: type must be one of %s", epic.ID, strings.Join(Types, "|")))
+		}
+		if epic.Status != "" && !contains(Statuses, epic.Status) {
+			problems = append(problems, fmt.Sprintf("%s: status must be one of %s", epic.ID, strings.Join(Statuses, "|")))
+		}
+		if count := groupsPerEpic[epic.ID]; count > epic.GroupsMax {
+			problems = append(problems, fmt.Sprintf("%s: %d groups, over its groups_max of %d; raise groups_max in %s or split the epic",
+				epic.ID, count, epic.GroupsMax, EpicFileName))
+		}
+	}
+	return problems
+}
+
 var slugDrop = regexp.MustCompile(`[^a-z0-9_ -]+`)
 
 // Slug is the anchor form of a heading, matching GitHub: lower case, punctuation
@@ -59,7 +123,7 @@ func Lint(parsed Backlog) []string {
 				if epic, ok := parsed.Epic(group.EpicID); ok {
 					epicVersion := epic.Version()
 					if epicVersion == "" {
-						problems = append(problems, fmt.Sprintf("%s: epic %s has no version; an epic names the version it ships as Ships as `x.y.z`", group.ID, group.EpicID))
+						problems = append(problems, fmt.Sprintf("%s: epic %s has no version; its %s declares the version it ships", group.ID, group.EpicID, EpicFileName))
 					} else if epicVersion != version {
 						if _, seen := mismatchGroups[group.EpicID]; !seen {
 							mismatchEpics = append(mismatchEpics, group.EpicID)

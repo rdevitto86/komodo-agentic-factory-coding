@@ -10,14 +10,14 @@ import (
 	"komodo/internal/pr"
 )
 
-// epicBacklog holds one epic with a goal line and one group that ships its version.
-const epicBacklog = "## [EPIC-05] Phase 1: the conductor drives\n" +
-	"*Goal: one group runs through the conductor within 60 minutes. Ships as `2.0.0`.*\n\n" +
-	"### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-05.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+// epicBacklog holds one epic with a title and goal, and one group shipping its version.
+func epicBacklog() backlog.Backlog {
+	epic := backlog.NewEpic("EPIC-05", "Phase 1: the conductor drives", "2.0.0")
+	epic.Goal = "one group runs through the conductor within 60 minutes."
+	return backlog.Backlog{Epics: []backlog.Epic{epic}, Groups: []backlog.Group{{ID: "TG-05.1", Title: "A group", EpicID: "EPIC-05"}}}
+}
 
-// epicRepo builds a remoted repo with main pushed; the group-file grammar cannot yet carry an
-// epic's phase title or goal, so openEpic runs against text parsed straight into memory.
+// epicRepo builds a remoted repo with main pushed; openEpic runs against a backlog built in memory.
 func epicRepo(t *testing.T) string {
 	t.Helper()
 	root, _ := remotedRepo(t)
@@ -42,7 +42,7 @@ func TestOpenEpicCutsPushesAndOpensADraftPull(t *testing.T) {
 		return "https://example.com/pull/9", nil
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
+	result, err := openEpic(root, epicBacklog(), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 		}
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
+	result, err := openEpic(root, epicBacklog(), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
+	result, err := openEpic(root, epicBacklog(), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestOpenEpicSkipsAPlanWithNoVersion(t *testing.T) {
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-05.1"}
-	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
+	result, err := openEpic(root, epicBacklog(), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}

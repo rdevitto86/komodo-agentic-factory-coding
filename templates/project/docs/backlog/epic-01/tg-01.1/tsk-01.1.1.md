@@ -1,0 +1,3 @@
+- [ ] **TSK-01.1.1** Replace this example with the first real task
+  - files: `path/to/file`, `path/to/file_test`
+  - accept: <the outcome that proves it, in one sentence>

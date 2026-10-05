@@ -649,6 +649,18 @@ func gitRepo(t *testing.T) string {
 	return root
 }
 
+// tickTask marks one task of group done in root's docs/backlog tree, as a shipped group's commit does.
+func tickTask(t *testing.T, root, group, task string) {
+	t.Helper()
+	dir, found, err := backlog.Locate(root, group)
+	if err != nil || !found {
+		t.Fatalf("Locate(%s) = %v, %v", group, found, err)
+	}
+	if err := dir.WriteTaskStatus(task, "DONE"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // commitAll stages and commits every change in the fixture.
 func commitAll(t *testing.T, root, message string) {
 	t.Helper()
@@ -949,7 +961,6 @@ func TestCheckHeadBranchesFlagsAForgeThatKeepsThemAfterAMerge(t *testing.T) {
 func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	const ready = "### [TG-01.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
-	done := strings.Replace(ready, "[READY]", "[DONE]", 1)
 	root := gitRepo(t)
 	backlogtest.SeedText(t, root, ready)
 	write(t, root, ".gitignore", "/.komodo/\n")
@@ -968,7 +979,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	run(root, "remote", "add", "origin", bare)
 	run(root, "push", "-q", "origin", "main")
 	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
-	backlogtest.SeedText(t, worktree, done)
+	tickTask(t, worktree, "TG-01.1", "TSK-01.1.1")
 	commitAll(t, worktree, "ship")
 	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
 	if err := line.SaveRun(root, state); err != nil {
@@ -979,7 +990,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if _, err := Prune(root, "main", true); err != nil {
 		t.Fatal(err)
 	}
-	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-01.1-g.md")
+	rootGroupFile := filepath.Join(backlog.GroupDirPath(root, "TG-01.1"), backlog.GroupFileName)
 	if data, _ := os.ReadFile(rootGroupFile); !strings.Contains(string(data), "[READY]") || !exists(worktree) {
 		t.Fatal("prune settled a run whose branch origin does not hold yet")
 	}

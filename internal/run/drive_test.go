@@ -85,11 +85,23 @@ func driveRepo(t *testing.T) string {
 	return root
 }
 
+// fakeGH answers the epic's draft pull request, the one gh call a cut makes outside the test's own client.
+const fakeGH = "#!/bin/sh\ncase \"$1 $2\" in\n  \"pr create\") echo https://example.invalid/pr/epic ;;\n  *) echo '[]' ;;\nesac\n"
+
+// installFakeGH drops the gh stand-in into dir, a PATH entry the test already owns.
+func installFakeGH(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(fakeGH), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // setupDriveFakeClaude drops the fake claude script on a fresh PATH entry, with its fixtures at
 // absolute paths and a fresh counter file, so it replays the builder then the reviewer in order.
 func setupDriveFakeClaude(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
+	installFakeGH(t, dir)
 	script := filepath.Join(dir, "claude")
 	if err := os.WriteFile(script, []byte(driveFakeClaude), 0o755); err != nil {
 		t.Fatal(err)
@@ -127,6 +139,7 @@ const escalateFixture = `{"type":"result","subtype":"success","is_error":false,"
 func TestAGroupPastItsBudgetSavesAndEscalatesInsteadOfOnlyDying(t *testing.T) {
 	root := driveRepo(t)
 	dir := t.TempDir()
+	installFakeGH(t, dir)
 	script := filepath.Join(dir, "claude")
 	if err := os.WriteFile(script, []byte(escalateOnTimeoutClaude), 0o755); err != nil {
 		t.Fatal(err)
@@ -229,10 +242,10 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if err != nil || !strings.Contains(string(review), `"findings"`) {
 		t.Fatalf("review result = %q, %v; the reviewer's result must be saved for ship", review, err)
 	}
-	// A no-epic group deletes its own file once it ships, its tasks' ticks the record.
+	// The epic's last group deletes the epic's whole folder once it ships, its tasks' ticks the record.
 	if _, err := exec.Command("git", "-C", bareRemote(t, root), "show",
-		"feat/TG-40.1-a-fake-group:docs/backlog/TG-40.1-a-fake-group.md").CombinedOutput(); err == nil {
-		t.Fatal("the shipped group's own file must be removed once it has no epic")
+		"feat/TG-40.1-a-fake-group:docs/backlog/epic-40/tg-40.1/TG.md").CombinedOutput(); err == nil {
+		t.Fatal("the shipped group's folder must be removed once its epic has ended")
 	}
 
 	// A group sent back to review after Prepare closed its tasks still finds its plan, and ships again.
@@ -349,19 +362,7 @@ func TestRunRefusesToCutWhereLeftoversCannotBeListed(t *testing.T) {
 func TestRunMergesAShippedGroupIntoItsEpicBranch(t *testing.T) {
 	root := driveRepo(t)
 	setupDriveFakeClaude(t)
-	groupPath := filepath.Join(root, "docs", "backlog", "TG-40.1-a-fake-group.md")
-	data, err := os.ReadFile(groupPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	withEpic := strings.Replace(string(data), "type: feat\n", "type: feat\nepic: EPIC-40\n", 1)
-	if withEpic == string(data) {
-		t.Fatal("the group's yaml block was not found to add an epic to")
-	}
-	if err := os.WriteFile(groupPath, []byte(withEpic), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, root, "commit", "-am", "an epic")
+	// The group's epic folder names an epic id at a version; its branch on origin makes it the group's base.
 	runGit(t, root, "push", "origin", "main", "main:refs/heads/feat/1.0.0")
 	var merged []string
 	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {

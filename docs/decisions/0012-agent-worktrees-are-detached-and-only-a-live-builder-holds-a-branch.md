@@ -1,6 +1,6 @@
 # 0012. Agent worktrees are detached, and only a live builder holds a branch
 
-**Status:** Accepted, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended 2026-10-04.
 
 **Context.** On 2026-10-02 a person merged a PR, then `git branch -d docs/hld-lld-and-decision-files` failed: an ad hoc session had that branch checked out in `.komodo/wt/docs-hld-lld`. Git refuses to check out or delete a branch any linked worktree holds, and only `komodo sync` freed it. Branch claims bound the person's own sessions for 12 hours while exempting builders, the reverse of the intent. Nothing released either lock when work was approved and pushed.
 
@@ -24,3 +24,5 @@
 - **A person can always check out, commit to or delete any local branch.** Only a push to a branch a builder is working on is refused, for at most 2 hours.
 - **A line branch appears locally after a fetch,** and `refs/komodo/*` holds unpushed work until it ships or is abandoned.
 - **The line's merged worktrees leave no local branch to delete;** REQ-46's "branches" now means the `refs/komodo` tips.
+
+**Amendment, 2026-10-04.** Prune may delete a local branch only when all four hold: its remote branch is deleted or the forge shows its PR merged; its local tip equals the last pushed tip; no worktree has it checked out; it is not a critical ref. The session-start status line reports the count.

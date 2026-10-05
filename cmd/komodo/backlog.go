@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"strconv"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -22,8 +22,7 @@ func runLint(root string) {
 	runLintGroupFiles(root)
 }
 
-// lintProblems returns every grammar problem across the repo's docs/backlog group files, none with no
-// group files at all.
+// lintProblems returns every grammar problem across the repo's docs/backlog tree, none with no tree at all.
 func lintProblems(root string) ([]string, error) {
 	problems, _, _, err := groupFileLintProblems(root)
 	problems = append(problems, versionProblems(root)...)
@@ -46,7 +45,7 @@ func versionProblems(root string) []string {
 	return backlog.LintVersions(parsed, strings.Fields(out))
 }
 
-// runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over the task cap.
+// runLintGroupFiles reports every docs/backlog problem, then the notes, with the task and group counts.
 func runLintGroupFiles(root string) {
 	problems, taskCount, groupCount, err := groupFileLintProblems(root)
 	if err != nil {
@@ -66,24 +65,14 @@ func runLintGroupFiles(root string) {
 	}
 }
 
-// groupFileLintProblems collects every problem across every docs/backlog group file, with the task and group counts.
-// A file whose heading fails to parse still counts as a group, so a malformed one is never silently dropped.
+// groupFileLintProblems collects every problem across the docs/backlog tree, with the task and group counts:
+// the tree's own structure, each assembled group, the epics' agreement, and the whole backlog's rules.
 func groupFileLintProblems(root string) (problems []string, taskCount, groupCount int, err error) {
-	names, err := groupFileNames(root)
+	tree, err := backlog.LoadTree(root)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	var files []backlog.GroupFile
-	texts := map[string]string{}
-	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		group := backlog.ParseGroupFile(string(data))
-		files = append(files, group)
-		texts[group.ID] = string(data)
-	}
+	files := tree.Files()
 	groupIDs := map[string]bool{}
 	taskIDs := map[string]bool{}
 	groupVersions := map[string]string{}
@@ -94,18 +83,49 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 			taskIDs[task.ID] = true
 		}
 	}
-	for _, file := range files {
+	problems = append(problems, backlog.LintTree(tree)...)
+	for index, file := range files {
 		problems = append(problems, file.Problems...)
 		// Filed findings wait in REFINEMENT and no builder works them, so only the rest count toward the cap.
 		if built := backlog.BuildableGroupFile(file); built > backlog.MaxGroupTasks {
 			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of %d (suggest a split per REQ-8)", file.ID, built, backlog.MaxGroupTasks))
 		}
-		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs, groupVersions)...)
+		text := strings.Join(groupTexts(tree.Groups[index]), "\n")
+		problems = append(problems, backlog.LintGroupFile(root, file, text, groupIDs, taskIDs, groupVersions)...)
 		taskCount += len(file.Tasks)
 	}
 	problems = append(problems, backlog.LintGroupFileEpics(files)...)
 	problems = append(problems, backlog.LintGroupFileDuplicates(files)...)
-	return problems, taskCount, len(files), nil
+	parsed := backlog.FromTree(tree)
+	parsed.Problems = nil
+	problems = append(problems, backlog.Lint(parsed)...)
+	return unique(problems), taskCount, len(files), nil
+}
+
+// groupTexts reads every file of a group folder, the group index file first, for the lints that scan raw lines.
+func groupTexts(group backlog.GroupDir) []string {
+	var texts []string
+	for _, path := range group.Paths() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		texts = append(texts, string(data))
+	}
+	return texts
+}
+
+// unique keeps the first of each identical problem line, since two lints may name one fault.
+func unique(problems []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, problem := range problems {
+		if !seen[problem] {
+			seen[problem] = true
+			out = append(out, problem)
+		}
+	}
+	return out
 }
 
 // runList prints the tasks of one group, or of every group.
@@ -159,88 +179,55 @@ func runList(root string, args []string) {
 	fmt.Printf("%d task(s)\n", len(rows))
 }
 
-// groupFilesDir is where one file per group lives, named <group-id>-<slug>.md.
-const groupFilesDir = "docs/backlog"
+// groupFilesDir holds every epic folder, group folder and task file.
+const groupFilesDir = backlog.GroupFilesDir
 
-// groupFileStatuses are the statuses valid on a group file's own heading, matching the grammar.
+// groupFileStatuses are the statuses valid on a group's or an epic's own heading, matching the grammar.
 var groupFileStatuses = []string{"REFINEMENT", "READY", "BLOCKED"}
 
-// runBacklog lists every open group under docs/backlog: there is no index, so the files are the list.
+// runBacklog lists every epic and its open groups under docs/backlog: the tree is the list.
 func runBacklog(root string) {
-	names, err := groupFileNames(root)
+	tree, err := backlog.LoadTree(root)
 	if err != nil {
 		fail(err)
 	}
 	count := 0
-	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
-		if err != nil {
-			fail(err)
+	for _, epic := range tree.Epics {
+		fmt.Printf("%-10s %-14s %s  %s\n", epic.ID, "["+epic.Status+"]", epic.Version, epic.Title)
+		for _, group := range tree.Groups {
+			if group.Epic.ID != epic.ID || group.File.ID == "" {
+				continue
+			}
+			fmt.Printf("  %-10s %-14s %s %s\n", group.File.ID, "["+group.File.Status+"]", "[P: "+group.File.Priority+"]", group.File.Title)
+			count++
 		}
-		group := backlog.ParseGroupFile(string(data))
-		if group.ID == "" {
-			continue
-		}
-		fmt.Printf("%-10s %-14s %s %s\n", group.ID, "["+group.Status+"]", "[P: "+group.Priority+"]", group.Title)
-		count++
+	}
+	for _, flat := range tree.Flat {
+		fmt.Printf("flat %s: a group file outside the tree; run komodo migrate\n", relPath(root, flat))
 	}
 	fmt.Printf("%d group(s)\n", count)
 }
 
-// groupFileNotes collects every group file's lint notes, which never fail lint.
+// groupFileNotes collects every group's lint notes, which never fail lint, plus one per flat file.
 func groupFileNotes(root string) []string {
-	names, _ := groupFileNames(root)
+	tree, err := backlog.LoadTree(root)
+	if err != nil {
+		return nil
+	}
 	var notes []string
-	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
-		if err != nil {
-			continue
-		}
-		notes = append(notes, backlog.NotesGroupFile(backlog.ParseGroupFile(string(data)))...)
+	for _, file := range tree.Files() {
+		notes = append(notes, backlog.NotesGroupFile(file)...)
+	}
+	for _, flat := range tree.Flat {
+		notes = append(notes, relPath(root, flat)+": a group file outside the tree; run komodo migrate, then remove it")
 	}
 	return notes
 }
 
-// groupFileNames lists the group files under docs/backlog, sorted, or none when the directory is absent.
-func groupFileNames(root string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			names = append(names, entry.Name())
-		}
-	}
-	sort.Strings(names)
-	return names, nil
-}
+// epicIDPattern matches an epic id's own shape.
+var epicIDPattern = regexp.MustCompile(`^EPIC-[\w.]+$`)
 
-// findGroupFile returns the path and text of the group file whose heading names groupID, if one exists.
-func findGroupFile(root, groupID string) (path, text string, found bool, err error) {
-	names, err := groupFileNames(root)
-	if err != nil {
-		return "", "", false, err
-	}
-	for _, name := range names {
-		candidate := filepath.Join(root, groupFilesDir, name)
-		data, err := os.ReadFile(candidate)
-		if err != nil {
-			return "", "", false, err
-		}
-		if backlog.ParseGroupFile(string(data)).ID == groupID {
-			return candidate, string(data), true, nil
-		}
-	}
-	return "", "", false, nil
-}
-
-// runBacklogAdd is add's group-file path: it writes a new group file when groupID has none yet,
-// else appends a task to its file.
+// runBacklogAdd adds an epic folder, a group folder under its epic, or a task file in its group.
 func runBacklogAdd(root string, args []string) {
 	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
@@ -248,12 +235,14 @@ func runBacklogAdd(root string, args []string) {
 	set.Var(&accept, "accept", "one acceptance line; repeat --accept for more than one")
 	doneWhen := set.String("done-when", "", "comma-separated shell commands whose zero exit proves the task done")
 	priority := set.String("priority", "M", "C, H, M, or L")
-	status := set.String("status", "REFINEMENT", "the status to open the group in")
+	status := set.String("status", "REFINEMENT", "the status to open the group or epic in")
 	groupType := set.String("type", "feat", "the conventional-commit type")
-	version := set.String("version", "", "the version the group ships")
-	epic := set.String("epic", "", "the epic id the group belongs to")
+	version := set.String("version", "", "an epic's version, the one every group under it ships")
+	groupsMax := set.Int("groups-max", backlog.DefaultGroupsMax, "an epic's most groups")
+	goal := set.String("goal", "", "an epic's goal paragraph")
+	mode := set.String("mode", "", "a group's mode: parallel or single")
 	next := set.String("next", "", "an epic id; print the next free group id across local branches and exit")
-	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic", "next")
+	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "groups-max", "goal", "mode", "next")
 	_ = set.Parse(rest)
 	if *next != "" {
 		taken, err := takenGroupIDs(root)
@@ -268,76 +257,78 @@ func runBacklogAdd(root string, args []string) {
 		return
 	}
 	if len(positional) < 2 {
-		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
+		fail(fmt.Errorf("usage: komodo add <epic|group> <title> [--files a,b] [--done-when cmd]"))
 	}
-	groupID, title := positional[0], strings.Join(positional[1:], " ")
-	if !backlog.ValidGroupID(groupID) {
-		fail(fmt.Errorf("%q is not a group id of the form TG-<id>", groupID))
+	id, title := positional[0], strings.Join(positional[1:], " ")
+	if !contains(groupFileStatuses, *status) {
+		fail(fmt.Errorf("%q is not a status: use REFINEMENT, READY, or BLOCKED", *status))
+	}
+	if epicIDPattern.MatchString(id) {
+		addEpic(root, backlog.EpicFile{ID: id, Title: title, Status: *status, Version: *version, Type: *groupType, GroupsMax: *groupsMax, Goal: *goal})
+		return
+	}
+	if !backlog.ValidGroupID(id) {
+		fail(fmt.Errorf("%q is neither an epic id EPIC-<n> nor a group id TG-<n>.<m>", id))
 	}
 	if !contains(backlog.Priorities, *priority) {
 		fail(fmt.Errorf("%q is not a priority: use C, H, M, or L", *priority))
 	}
-	if !contains(groupFileStatuses, *status) {
-		fail(fmt.Errorf("%q is not a status: use REFINEMENT, READY, or BLOCKED", *status))
-	}
-	path, text, found, err := findGroupFile(root, groupID)
+	task := backlog.GroupTask{Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen)}
+	taskFlagsGiven := len(task.Files) > 0 || len(accept) > 0 || len(task.Checks) > 0
+	group, found, err := backlog.Locate(root, id)
 	if err != nil {
 		fail(err)
 	}
-	if !found {
-		taken, err := takenGroupIDs(root)
-		if err != nil {
-			fail(err)
-		}
-		if taken[groupID] {
-			fail(fmt.Errorf("%s is already taken in the working tree or on a local branch", groupID))
-		}
-	}
-	taskFlagsGiven := len(splitStrings(*files)) > 0 || len(accept) > 0 || len(splitStrings(*doneWhen)) > 0
 	if found {
-		if len(splitStrings(*files)) == 0 {
+		if len(task.Files) == 0 {
 			fail(fmt.Errorf("task declares no files; pass --files"))
 		}
-		out, id, err := backlog.AppendGroupFileTaskWith(text, backlog.GroupTask{
-			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
-		})
+		taskID, _, err := group.AppendTask(task)
 		if err != nil {
 			fail(err)
 		}
-		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
-			fail(err)
-		}
-		fmt.Println(id)
-		line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
+		fmt.Println(taskID)
+		line.Stamp(root, ledger.Entry{Station: "add", Task: taskID, Outcome: "added"})
 		return
 	}
-	if taskFlagsGiven && len(splitStrings(*files)) == 0 {
+	taken, err := takenGroupIDs(root)
+	if err != nil {
+		fail(err)
+	}
+	if taken[id] {
+		fail(fmt.Errorf("%s is already taken in the working tree or on a local branch", id))
+	}
+	if taskFlagsGiven && len(task.Files) == 0 {
 		fail(fmt.Errorf("task declares no files; pass --files"))
 	}
-	var fields backlog.Fields
-	fields.Set("type", *groupType)
-	fields.Set("version", *version)
-	fields.Set("epic", *epic)
-	fields.Set("depends_on", []any{})
-	out := backlog.RenderGroupFile(groupID, title, *priority, *status, fields)
-	dest := filepath.Join(root, groupFilesDir, groupID+"-"+backlog.Slug(title)+".md")
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		fail(err)
-	}
-	taskID := groupID
+	file := backlog.GroupFile{ID: id, Title: title, Priority: *priority, Status: *status, Type: *groupType, Mode: *mode}
 	if taskFlagsGiven {
-		out, taskID, err = backlog.AppendGroupFileTaskWith(out, backlog.GroupTask{
-			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
-		})
-		if err != nil {
-			fail(err)
-		}
+		task.ID = "TSK-" + strings.TrimPrefix(id, "TG-") + ".1"
+		file.Tasks = append(file.Tasks, task)
 	}
-	if err := os.WriteFile(dest, []byte(out), 0o644); err != nil {
+	dir, err := backlog.WriteGroup(root, file)
+	if err != nil {
 		fail(err)
 	}
-	fmt.Println(groupID)
+	fmt.Println(id)
+	taskID := id
+	if taskFlagsGiven {
+		taskID = task.ID
+	}
 	line.Stamp(root, ledger.Entry{Station: "add", Task: taskID, Outcome: "added"})
+	_ = dir
+}
+
+// addEpic writes a new epic folder and prints its id.
+func addEpic(root string, epic backlog.EpicFile) {
+	if epic.Version == "" {
+		fail(fmt.Errorf("an epic declares the version it ships; pass --version x.y.z"))
+	}
+	if _, err := backlog.WriteEpic(root, epic); err != nil {
+		fail(err)
+	}
+	fmt.Println(epic.ID)
+	line.Stamp(root, ledger.Entry{Station: "add", Task: epic.ID, Outcome: "added"})
 }
 
 // repeatedFlag collects every occurrence of a flag given more than once, in order.
@@ -352,21 +343,22 @@ func (r *repeatedFlag) Set(value string) error {
 	return nil
 }
 
-// groupFilename is a docs/backlog group file's leading group id, matching how its own file names it.
-var groupFilename = regexp.MustCompile(`^(TG-[\w.]+)-`)
+// groupDirname is a group folder's name inside the tree, from which its id is read back.
+var groupDirname = regexp.MustCompile(`(?:^|/)(tg-[\w.]+)(?:/|$)`)
 
-// takenGroupIDs is every group id already in the working tree, including an untracked file, plus
+// takenGroupIDs is every group id already in the working tree, including an untracked folder, plus
 // every group id docs/backlog holds on any local branch, so a fresh checkout still sees it.
 func takenGroupIDs(root string) (map[string]bool, error) {
 	taken := map[string]bool{}
-	names, err := groupFileNames(root)
+	tree, err := backlog.LoadTree(root)
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range names {
-		if match := groupFilename.FindStringSubmatch(name); match != nil {
-			taken[match[1]] = true
+	for _, group := range tree.Groups {
+		if group.File.ID != "" {
+			taken[group.File.ID] = true
 		}
+		taken[strings.ToUpper(filepath.Base(group.Dir))] = true
 	}
 	branches, err := git.Run(root, "branch", "--list", "--format=%(refname:short)")
 	if err != nil {
@@ -382,8 +374,8 @@ func takenGroupIDs(root string) (map[string]bool, error) {
 			continue // a branch with no docs/backlog yet names none
 		}
 		for _, name := range strings.Split(listing, "\n") {
-			if match := groupFilename.FindStringSubmatch(filepath.Base(name)); match != nil {
-				taken[match[1]] = true
+			if match := groupDirname.FindStringSubmatch(filepath.ToSlash(name)); match != nil {
+				taken[strings.ToUpper(match[1])] = true
 			}
 		}
 	}
@@ -399,4 +391,12 @@ func splitStrings(value string) []string {
 		}
 	}
 	return items
+}
+
+// atoiOr parses a count, falling back when the text is not one.
+func atoiOr(text string, fallback int) int {
+	if n, err := strconv.Atoi(text); err == nil {
+		return n
+	}
+	return fallback
 }

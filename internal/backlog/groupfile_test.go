@@ -254,3 +254,15 @@ func TestGroupFileReadsDoneWhenAndTheLegacyChecks(t *testing.T) {
 		}
 	}
 }
+
+// TestListItemsKeepCommasInsideBackticks proves a quoted item keeps its commas and bare items still split.
+func TestListItemsKeepCommasInsideBackticks(t *testing.T) {
+	got := splitGroupFileList("`a.go`, `today: status, diff and log`, docs/x.md#y, `z`")
+	want := []string{"a.go", "today: status, diff and log", "docs/x.md#y", "z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := splitGroupFileList("TSK-1.1.1, TSK-1.1.2"); len(got) != 2 || got[1] != "TSK-1.1.2" {
+		t.Fatalf("bare list = %q", got)
+	}
+}

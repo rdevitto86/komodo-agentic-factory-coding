@@ -155,21 +155,45 @@ func changedFiles(diff string) []string {
 	return out
 }
 
-// outsideGroupFile returns every path after's diff newly touches past before's, outside groupID's own backlog file.
+// outsideGroupFile returns every path after newly touches outside the group's folder or a new sibling group folder.
 func outsideGroupFile(groupID, before, after string) []string {
 	had := map[string]bool{}
 	for _, path := range changedFiles(before) {
 		had[path] = true
 	}
-	own := backlog.GroupFilesDir + "/" + groupID + "-"
+	epicDir := backlog.GroupFilesDir + "/" + backlog.EpicDirName(backlog.EpicIDOfGroup(groupID)) + "/"
+	own := epicDir + backlog.GroupDirName(groupID) + "/"
+	created := newFiles(after)
 	var outside []string
 	for _, path := range changedFiles(after) {
-		if had[path] || strings.HasPrefix(path, own) {
+		if had[path] || strings.HasPrefix(path, own) || (created[path] && siblingGroupFile(path, epicDir)) {
 			continue
 		}
 		outside = append(outside, path)
 	}
 	return outside
+}
+
+// newFiles is every path a diff creates: one whose old side is /dev/null.
+func newFiles(diff string) map[string]bool {
+	out := map[string]bool{}
+	fromNull := false
+	for _, line := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "--- "):
+			fromNull = strings.TrimPrefix(line, "--- ") == "/dev/null"
+		case strings.HasPrefix(line, "+++ ") && fromNull:
+			out[strings.TrimPrefix(strings.TrimPrefix(line, "+++ "), "b/")] = true
+			fromNull = false
+		}
+	}
+	return out
+}
+
+// siblingGroupFile reports a path inside a tg- folder directly under epicDir.
+func siblingGroupFile(path, epicDir string) bool {
+	rest, ok := strings.CutPrefix(path, epicDir)
+	return ok && strings.HasPrefix(rest, "tg-") && strings.Contains(rest, "/")
 }
 
 // lint returns the lint problems a split or clarify left; with no linter wired nothing proves the rewrite.

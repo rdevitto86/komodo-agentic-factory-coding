@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 func TestTaskChecksAllowAStopWhenEveryCheckPasses(t *testing.T) {
@@ -90,13 +92,12 @@ func TestTaskChecksAllowWhenTheBacklogHoldsNoSuchGroup(t *testing.T) {
 func TestTaskChecksRunACheckTwoTasksShareOnce(t *testing.T) {
 	t.Parallel()
 	root := groupRoot(t, "echo once >> ran.log")
-	path := filepath.Join(root, "docs", "backlog", "TG-90.1-a-group.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	group, found, err := backlog.Locate(root, "TG-90.1")
+	if err != nil || !found {
+		t.Fatalf("Locate = %v, %v", found, err)
 	}
-	second := "\n- [ ] **TSK-90.1.2** Another task\n  - files: `b.go`\n  - done_when: `echo once >> ran.log`\n"
-	if err := os.WriteFile(path, append(data, second...), 0o644); err != nil {
+	second := backlog.GroupTask{Title: "Another task", Files: []string{"b.go"}, Checks: []string{"echo once >> ran.log"}}
+	if _, _, err := group.AppendTask(second); err != nil {
 		t.Fatal(err)
 	}
 	if got := dispatch(t, root, "taskchecks", map[string]any{"session_id": "shared", "cwd": root}); got.code != 0 {

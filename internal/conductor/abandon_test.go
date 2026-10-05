@@ -9,12 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
-const abandonBacklog = "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-	"- [x] **TSK-1.1** Done already\n  - files: `a.go`\n\n" +
-	"- [ ] **TSK-1.2** Still open\n  - files: `b.go`\n"
+// abandonGroup is the one group a test repo holds: a done task and an open one.
+var abandonGroup = backlog.GroupFile{ID: "TG-1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "1.0.0",
+	Tasks: []backlog.GroupTask{
+		{ID: "TSK-1.1", Title: "Done already", Done: true, Files: []string{"a.go"}},
+		{ID: "TSK-1.2", Title: "Still open", Files: []string{"b.go"}},
+	}}
+
+// abandonGroupFile is the group's the group index file under root, where its blocker note lands.
+func abandonGroupFile(root string) string {
+	return filepath.Join(backlog.GroupDirPath(root, "TG-1"), backlog.GroupFileName)
+}
 
 // abandonRepo builds a repo whose one group was cut into its own worktree and branch, with a run record.
 func abandonRepo(t *testing.T) (root, worktree string) {
@@ -29,7 +39,7 @@ func abandonRepo(t *testing.T) (root, worktree string) {
 	gitIn(root, "init", "-b", "main")
 	gitIn(root, "config", "user.email", "a@example.com")
 	gitIn(root, "config", "user.name", "a")
-	writeIn(t, root, "docs/backlog/TG-1-a-group.md", abandonBacklog)
+	backlogtest.Seed(t, root, abandonGroup)
 	gitIn(root, "add", "-A")
 	gitIn(root, "commit", "-m", "seed")
 	worktree = filepath.Join(root, line.StateDir, "wt", "TG-1")
@@ -65,7 +75,7 @@ func TestAbandonRemovesTheWorktreeAndTipAndBlocksTheGroup(t *testing.T) {
 	if _, err := os.Stat(line.RunDir(root, "TG-1")); !os.IsNotExist(err) {
 		t.Fatalf("run dir stat = %v, want the run record removed", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
+	data, err := os.ReadFile(abandonGroupFile(root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,22 +83,29 @@ func TestAbandonRemovesTheWorktreeAndTipAndBlocksTheGroup(t *testing.T) {
 	for _, want := range []string{
 		"> **Blocked** 2026-09-27 10:30, run run-1, at Blocked.",
 		"abandoned on purpose with `komodo abandon`",
-		"- [x] **TSK-1.1**",
 		"[TG-1] A group [P: C] [BLOCKED]",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("backlog =\n%s\nwant %q", text, want)
 		}
 	}
+	done, err := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-1"), backlog.TaskFileName("TSK-1.1")))
+	if err != nil || !strings.Contains(string(done), "- [x] **TSK-1.1**") {
+		t.Fatalf("done task = %q, %v; abandon must leave a finished task ticked", done, err)
+	}
 }
 
 func TestAbandonRefusesAGroupWithNoRunAndChangesNothing(t *testing.T) {
 	root, _ := abandonRepo(t)
+	before, err := os.ReadFile(abandonGroupFile(root))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := Abandon(root, "TG-9", time.Now()); err == nil {
 		t.Fatal("abandon = nil, want a group never cut refused")
 	}
-	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
-	if err != nil || string(data) != abandonBacklog {
+	data, err := os.ReadFile(abandonGroupFile(root))
+	if err != nil || string(data) != string(before) {
 		t.Fatalf("backlog = %q, %v; want it untouched", data, err)
 	}
 }
@@ -108,7 +125,7 @@ func TestAbandonFindsTheDefaultWorktreeOfARunWithNoSavedState(t *testing.T) {
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("worktree stat = %v, want the default worktree removed", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
+	data, err := os.ReadFile(abandonGroupFile(root))
 	if err != nil || !strings.Contains(string(data), "run run-1, at "+abandonedState+".") {
 		t.Fatalf("backlog = %s, %v; want the note at %s", data, err, abandonedState)
 	}
@@ -118,7 +135,7 @@ func TestAbandonFindsTheDefaultWorktreeOfARunWithNoSavedState(t *testing.T) {
 // destructive git step, so a failed write leaves the worktree, branch and run record all in place.
 func TestAbandonNeverRemovesTheWorktreeWhenItCannotWriteTheNote(t *testing.T) {
 	root, worktree := abandonRepo(t)
-	path := filepath.Join(root, "docs", "backlog", "TG-1-a-group.md")
+	path := abandonGroupFile(root)
 	if err := os.Chmod(path, 0o444); err != nil {
 		t.Fatal(err)
 	}

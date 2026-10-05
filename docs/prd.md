@@ -55,7 +55,7 @@ The personas are examples of who uses the line, not named people.
 | Target languages | Go, TypeScript | Other languages are unproven, though the line may still run on them |
 | Platforms | macOS, Linux, Windows 10 and 11 natively; WSL2 used when present | — |
 | Pipeline | The eight stages, and single stages run ad hoc | Cloud facet work, MCP servers |
-| Task source | A committed plan: one file per task group in `docs/backlog/`, removed when its epic ends, with `CHANGELOG.md` as the history | Issue trackers and a project platform, through ingest adapters |
+| Task source | A committed plan: one folder per epic holding one folder per task group and one file per task under `docs/backlog/`, deleted when its epic ends, with `CHANGELOG.md` as the history | Issue trackers and a project platform, through ingest adapters |
 | Integrations | Plugin points, shipped disabled: notifiers, tool packs, stage hooks | Enabled Slack, Google Chat and cloud plugins |
 | Authentication | The host's own login; the developer's local git PAT for the forge | API-key billing modes, bot accounts |
 | Guardrails | OS sandbox where the platform has one, output checks, a guard that catches mistakes, draft-first PRs | A guard that stops an adversarial model |
@@ -177,7 +177,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | REQ-25 | Every PR opens as a draft, or with a `status/wip` label where the forge offers no drafts. It becomes ready for review only when every check and review has passed. | Must | A test for each path. |
 | REQ-26 | Shipment is the only stage that uses the forge credential. It pushes only unprotected branches, then labels the PR. | Must | Unit tests; a guard table row for model sessions. |
 | REQ-27 | A missing or expired forge credential never loses work. The group stops before Ship with a blocker note, and `komodo ship` finishes it later. | Must | An eval case with the credential removed mid-run. |
-| REQ-46 | Cleanup is mechanical. The PR that finishes an epic deletes its group files, a merged group's worktree and branches are removed, `CHANGELOG.md` keeps the history, and doctor flags anything left over. | Must | Unit tests; `komodo doctor` reports each kind of leftover. |
+| REQ-46 | Cleanup is mechanical. The PR that finishes an epic deletes its folder under `docs/backlog`, a merged group's worktree and branches are removed, `CHANGELOG.md` keeps the history, and doctor flags anything left over. | Must | Unit tests; `komodo doctor` reports each kind of leftover. |
 
 ### Time, cost and pacing
 

@@ -9,11 +9,11 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
 
 ```
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
-  komodo migrate [--dry-run]  Convert a legacy backlog file, or TODO.md, into docs/backlog group files
+  komodo migrate [--dry-run]  Move a flat backlog, BACKLOG.md or TODO.md into the docs/backlog tree
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
-  komodo backlog             List the open groups under docs/backlog
-  komodo add <group> <title>  Add a group, or append a task to one
+  komodo backlog              List every epic and its open groups under docs/backlog
+  komodo add <epic|group> <title>  Add an epic, a group, or append a task
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
   komodo ingest [group]       Compile each READY group into a card under .komodo/queue

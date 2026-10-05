@@ -3,8 +3,6 @@ package backlog
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -111,32 +109,15 @@ func setGroupFileHeadingStatus(text, status string) (string, error) {
 	return "", fmt.Errorf("no group heading found")
 }
 
-// FindGroupFile returns the path and text of the docs/backlog group file whose heading names
-// groupID, if root holds one.
+// FindGroupFile returns the path and text of the group index file whose heading names groupID, if root holds one.
 func FindGroupFile(root, groupID string) (path, text string, found bool, err error) {
-	entries, err := os.ReadDir(filepath.Join(root, GroupFilesDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", "", false, nil
-		}
+	group, found, err := Locate(root, groupID)
+	if err != nil || !found {
 		return "", "", false, err
 	}
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			names = append(names, entry.Name())
-		}
+	data, err := os.ReadFile(group.Path)
+	if err != nil {
+		return "", "", false, err
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		candidate := filepath.Join(root, GroupFilesDir, name)
-		data, err := os.ReadFile(candidate)
-		if err != nil {
-			return "", "", false, err
-		}
-		if ParseGroupFile(string(data)).ID == groupID {
-			return candidate, string(data), true, nil
-		}
-	}
-	return "", "", false, nil
+	return group.Path, string(data), true, nil
 }

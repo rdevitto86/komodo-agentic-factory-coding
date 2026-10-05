@@ -10,15 +10,20 @@ import (
 	"komodo/internal/backlog"
 )
 
-// sampleGroupFile is the one group file init writes into docs/backlog/.
-const sampleGroupFile = "docs/backlog/TG-01.1-example-group.md"
+// sampleGroupFile is the group index file of the one example group init writes into the docs/backlog tree.
+const sampleGroupFile = "docs/backlog/epic-01/tg-01.1/TG.md"
+
+// sampleTreeFiles are the example epic's other files: its the epic index file and the group's task files.
+var sampleTreeFiles = []string{
+	"docs/backlog/epic-01/EPIC.md", "docs/backlog/epic-01/tg-01.1/tsk-01.1.1.md", "docs/backlog/epic-01/tg-01.1/tsk-01.1.2.md",
+}
 
 // starterFiles are the paths init writes into an empty repo.
-var starterFiles = []string{
+var starterFiles = append([]string{
 	"AGENTS.md", "CHANGELOG.md", sampleGroupFile,
 	"docs/prd.md", "docs/hld.md", "docs/lld.md", "docs/decisions/README.md", "docs/diagrams/README.md", "docs/media/README.md",
 	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md", ".gitattributes",
-}
+}, sampleTreeFiles...)
 
 // emptyRepo is a fresh git repo holding nothing.
 func emptyRepo(t *testing.T) string {
@@ -57,13 +62,15 @@ func TestInitWritesEveryStarterAndTheSampleGroupFileParsesClean(t *testing.T) {
 	if !strings.Contains(got.stdout, "komodo install --host ") || !strings.Contains(got.stdout, "komodo lint") {
 		t.Fatalf("init printed no next commands:\n%s", got.stdout)
 	}
-	data, err := os.ReadFile(filepath.Join(root, sampleGroupFile))
-	if err != nil {
-		t.Fatal(err)
+	group, found, err := backlog.Locate(root, "TG-01.1")
+	if err != nil || !found {
+		t.Fatalf("the sample group is not in the tree: found %v, %v", found, err)
 	}
-	group := backlog.ParseGroupFile(string(data))
-	if len(group.Problems) != 0 {
-		t.Fatalf("the sample group file does not parse clean: %v", group.Problems)
+	if len(group.Problems) != 0 || len(group.File.Problems) != 0 || len(group.File.Tasks) != 2 {
+		t.Fatalf("the sample group does not parse clean: %v %v, %d tasks", group.Problems, group.File.Problems, len(group.File.Tasks))
+	}
+	if group.File.Version == "" || group.Epic.ID != "EPIC-01" {
+		t.Fatalf("the sample group inherits no version from its epic: %+v", group.File)
 	}
 	lint := runCLI(t, root, "", "lint")
 	if lint.code != 0 || !strings.Contains(lint.stdout, " 0 problem(s)") {
@@ -187,17 +194,13 @@ func TestMissingSectionsIgnoresAnUnfilledPlaceholderHeading(t *testing.T) {
 	}
 }
 
-// TestInitLintsAnAdoptedReposExistingBacklog proves init reports a broken backlog it kept, not just wrote.
+// TestInitLintsAnAdoptedReposExistingBacklog proves init reports a broken backlog it kept, not just wrote:
+// here a group folder with no the epic index file beside it and a task line with no id.
 func TestInitLintsAnAdoptedReposExistingBacklog(t *testing.T) {
 	root := emptyRepo(t)
-	broken := "## [TG-01.1] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\n```\n\n" +
+	broken := "## [TG-02.1] A group [P: H] [READY]\n\n```yaml\ntype: feat\n```\n\n" +
 		"- [ ] a task with no bold TSK id\n"
-	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "docs", "backlog", "TG-01.1-a.md"), []byte(broken), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	seedRawGroupDir(t, root, "epic-02", "tg-02.1", broken)
 	got := runCLI(t, root, "", "init")
 	if got.code != 0 {
 		t.Fatalf("init exited %d: %s%s", got.code, got.stdout, got.stderr)

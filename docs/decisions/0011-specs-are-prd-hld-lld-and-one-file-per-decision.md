@@ -1,6 +1,6 @@
 # 0011. Specs are prd, hld, lld and one file per decision
 
-**Status:** Accepted, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0014, 2026-10-04.
 
 **Context.** The four spec files were `prd.md`, `architecture.md`, `system-design.md` and `decisions.md`. People and agents confused the middle two: both describe the design, and the names do not say where one ends. The decision log was one append-only file, so two branches that each added a decision always conflicted at its end, the same failure that moved the backlog to one file per group (0004). Repos on the older PRD and SDD pair mixed slow structure with code-paced detail in one file, and buried decisions in a table.
 
@@ -19,3 +19,5 @@
 - **Agents read the prose, people also see the pictures;** a diagram never holds a fact the prose lacks.
 - **HLD and LLD are the terms the wider industry already uses,** so a new reader needs no glossary.
 - **Every repo on the older names migrates:** `architecture.md` to `hld.md`, `system-design.md` or an SDD to `lld.md`, and its decisions to `docs/decisions/`.
+
+**Amendment, 2026-10-04.** The backlog beside the specs is a tree of epics, groups and tasks under `docs/backlog/`; 0014 holds that layout.

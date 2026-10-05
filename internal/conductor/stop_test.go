@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
-// stopBacklog is a group with one open task a blocker note can mark BLOCKED.
-const stopBacklog = "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-	"- [ ] **TSK-09.1.1** Do it\n  - files: `a.go`\n"
+// stopGroup is a group with one open task a blocker note can mark BLOCKED.
+var stopGroup = backlog.GroupFile{ID: "TG-09.1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "1.0.0",
+	Tasks: []backlog.GroupTask{{ID: "TSK-09.1.1", Title: "Do it", Files: []string{"a.go"}}}}
 
 // blocking wires the rig's driver to record each note Block publishes, failing with err.
 func blocking(r *rig, err error) *[]backlog.BlockerNote {
@@ -90,7 +91,7 @@ func TestLineBlockFailsWhenAScrubbedNoteNeverPublishes(t *testing.T) {
 	gitIn("init", "-b", "main")
 	gitIn("config", "user.email", "a@example.com")
 	gitIn("config", "user.name", "a")
-	writeIn(t, worktree, "docs/backlog/TG-09.1-a-group.md", stopBacklog)
+	backlogtest.Seed(t, worktree, stopGroup)
 	if err := os.WriteFile(filepath.Join(worktree, "a.go"), []byte("package a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

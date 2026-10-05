@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/conductor"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -59,9 +60,23 @@ func copyBytes(path, body string) error {
 func fakeClone(asked *[]string) Clone {
 	return func(_ context.Context, url, commit, dir string) error {
 		*asked = append(*asked, url+"@"+commit)
-		return copyBytes(filepath.Join(dir, "docs", "backlog", "TG-00.1-shipped.md"),
-			"## [TG-00.1] Shipped long ago [P: M] [DONE]\n\n```yaml\ntype: feat\n```\n")
+		return seedShipped(dir)
 	}
+}
+
+// seedShipped writes the clone's own shipped group into its docs/backlog tree.
+func seedShipped(dir string) error {
+	if _, err := backlog.WriteEpic(dir, backlog.EpicFile{ID: "EPIC-00", Title: "Shipped", Status: "DONE", Version: "0.0.1"}); err != nil {
+		return err
+	}
+	_, err := backlog.WriteGroup(dir, backlog.GroupFile{ID: "TG-00.1", Title: "Shipped long ago", Priority: "M", Status: "DONE", Type: "feat", EpicID: "EPIC-00"})
+	return err
+}
+
+// groupHeader reads the group index file of group under dir's docs/backlog tree.
+func groupHeader(dir, group string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(backlog.GroupDirPath(dir, group), backlog.GroupFileName))
+	return string(data), err
 }
 
 // fakeLine writes answer into worktree, stamps a build and review, and saves state ready to ship if ship is set.
@@ -74,12 +89,12 @@ type fakeLine struct {
 
 func (f fakeLine) drive(t *testing.T) Line {
 	return func(_ context.Context, dir string, group Group) error {
-		shipped, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-00.1-shipped.md"))
-		if err != nil || !strings.Contains(string(shipped), "[TG-00.1] Shipped long ago") {
-			t.Errorf("shipped group file = %q, %v; the clone's own group file must survive", shipped, err)
+		shipped, err := groupHeader(dir, "TG-00.1")
+		if err != nil || !strings.Contains(shipped, "[TG-00.1] Shipped long ago") {
+			t.Errorf("shipped group file = %q, %v; the clone's own group folder must survive", shipped, err)
 		}
-		added, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"))
-		if err != nil || !strings.Contains(string(added), "[TG-01.1] Greet") {
+		added, err := groupHeader(dir, "TG-01.1")
+		if err != nil || !strings.Contains(added, "[TG-01.1] Greet") {
 			t.Errorf("added group file = %q, %v; the suite's group file must join before the line runs", added, err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "check.sh")); err == nil {
@@ -183,8 +198,8 @@ func TestRunStartsABacklogAndRejectsABrokenHandoff(t *testing.T) {
 		t.Run(each.name, func(t *testing.T) {
 			bare := func(_ context.Context, _, _, dir string) error { return os.MkdirAll(dir, 0o755) }
 			drive := func(_ context.Context, dir string, group Group) error {
-				added, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"))
-				if err != nil || !strings.Contains(string(added), "[TG-01.1] Greet") {
+				added, err := groupHeader(dir, "TG-01.1")
+				if err != nil || !strings.Contains(added, "[TG-01.1] Greet") {
 					t.Errorf("added group file = %q, %v; a clone with no backlog starts one", added, err)
 				}
 				if each.state == "" {
@@ -240,6 +255,36 @@ func TestLaunchFailsNamingTheStepThatFailed(t *testing.T) {
 	}
 }
 
+// TestAppendGroupWritesTheSuiteGroupIntoTheTree proves a suite section lands as epic, group and task files,
+// and a second group joins the existing epic folder.
+func TestAppendGroupWritesTheSuiteGroupIntoTheTree(t *testing.T) {
+	dir := t.TempDir()
+	sections := t.TempDir()
+	for _, id := range []string{"TG-01.1", "TG-01.2"} {
+		section := filepath.Join(sections, id+".md")
+		if err := copyBytes(section, probeGroup(id, "Probe "+id, "p.txt", "write p.txt")); err != nil {
+			t.Fatal(err)
+		}
+		if err := appendGroup(dir, section); err != nil {
+			t.Fatalf("appendGroup(%s) = %v", id, err)
+		}
+	}
+	for _, rel := range []string{
+		"epic-01/EPIC.md", "epic-01/tg-01.1/TG.md", "epic-01/tg-01.1/tsk-01.1.1.md", "epic-01/tg-01.2/TG.md", "epic-01/tg-01.2/tsk-01.2.1.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, backlog.GroupFilesDir, rel)); err != nil {
+			t.Fatalf("%s: %v; the suite group must land in the tree", rel, err)
+		}
+	}
+	tree, err := backlog.LoadTree(dir)
+	if err != nil || len(tree.Problems) != 0 || len(tree.Groups) != 2 || len(tree.Flat) != 0 {
+		t.Fatalf("tree = %+v, %v; want two clean groups under one epic and no flat file", tree, err)
+	}
+	if got := tree.Groups[0].File; got.ID != "TG-01.1" || got.EpicID != "EPIC-01" || got.Version != "0.0.1" || len(got.Tasks) != 1 {
+		t.Fatalf("group = %+v; want TG-01.1 under EPIC-01 at 0.0.1 with its one task", got)
+	}
+}
+
 // TestLaunchInstallsCommitsPushesAndRunsWithNoShip proves the live line's steps against a stand-in komodo.
 func TestLaunchInstallsCommitsPushesAndRunsWithNoShip(t *testing.T) {
 	source, parent, _ := sourceRepo(t)
@@ -247,8 +292,7 @@ func TestLaunchInstallsCommitsPushesAndRunsWithNoShip(t *testing.T) {
 	if err := CloneAt(context.Background(), source, parent, dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyBytes(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"),
-		"## [TG-01.1] Greet [P: M] [READY]\n\n```yaml\ntype: feat\n```\n"); err != nil {
+	if err := appendGroup(dir, filepath.Join(offlineSuite(t).Dir, "greet/TG-01.1.md")); err != nil {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(t.TempDir(), "calls")

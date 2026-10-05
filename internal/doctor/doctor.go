@@ -77,6 +77,11 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkWorkflows(root)...)
 	problems = append(problems, checkLegacyBacklog(root)...)
 	problems = append(problems, checkStalledBacklog(root, now())...)
+	if options.Warn != nil {
+		for _, note := range FlatBacklogFiles(root) {
+			options.Warn(note)
+		}
+	}
 	if !options.NoGit {
 		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
@@ -358,9 +363,9 @@ func checkReferences(root string) []Problem {
 	return problems
 }
 
-// resolves reports whether a referenced path exists beside the file, at the root, or under komodo.
+// resolves reports whether a referenced path exists beside the file, at the root, under komodo, or as a starter's name.
 func resolves(root, dir, target string) bool {
-	if strings.ContainsAny(target, "<>*") {
+	if strings.ContainsAny(target, "<>*") || starterName(root, filepath.Base(target)) {
 		return true
 	}
 	for _, base := range []string{dir, root, filepath.Join(root, "komodo"), filepath.Join(root, "internal")} {
@@ -369,6 +374,19 @@ func resolves(root, dir, target string) bool {
 		}
 	}
 	return false
+}
+
+// starterName reports whether the starter templates define a file of this name.
+func starterName(root, name string) bool {
+	found := false
+	_ = filepath.WalkDir(filepath.Join(root, "templates", "project"), func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && entry.Name() == name {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // checkRoles reports every role whose frontmatter or schema is not well formed.

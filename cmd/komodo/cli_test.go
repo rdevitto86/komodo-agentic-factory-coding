@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -165,14 +166,14 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	if !strings.Contains(got.stdout, "A second task") {
 		t.Fatalf("list after add = %s", got.stdout)
 	}
-	// add has no --done-when flag yet; a READY group's new task needs one for lint, so add it by hand.
-	groupPath := filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")
-	data, err := os.ReadFile(groupPath)
+	// A READY group's new task needs a done_when for lint; a person adds it in the task file.
+	taskPath := filepath.Join(backlog.GroupDirPath(root, "TG-90.2"), "tsk-90.2.2.md")
+	data, err := os.ReadFile(taskPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	patched := strings.Replace(string(data), "files: `c/three.go`\n", "files: `c/three.go`\n  - done_when: `go test ./c/...`\n", 1)
-	if err := os.WriteFile(groupPath, []byte(patched), 0o644); err != nil {
+	if err := os.WriteFile(taskPath, []byte(patched), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if lint := runCLI(t, root, "", "lint"); lint.code != 0 {
@@ -184,12 +185,14 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 // land on the new group's first task, instead of being dropped with an empty group left behind.
 func TestAddHonorsFilesBeforeANewGroupsPositionals(t *testing.T) {
 	root := fixtureRepo(t)
+	if epic := runCLI(t, root, "", "add", "EPIC-91", "Ninety-one", "--version", "4.0.0"); epic.code != 0 {
+		t.Fatalf("add epic exited %d: %s%s", epic.code, epic.stdout, epic.stderr)
+	}
 	got := runCLI(t, root, "", "add", "--files", "c/four.go", "--done-when", "go test ./c/...", "TG-91", "A new group")
 	if got.code != 0 {
 		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
 	}
-	groupPath := filepath.Join(root, "docs", "backlog", "TG-91-a-new-group.md")
-	data, err := os.ReadFile(groupPath)
+	data, err := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-91"), "tsk-91.1.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +213,7 @@ func TestAddAcceptsRepeatedAcceptFlags(t *testing.T) {
 	if got.code != 0 {
 		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md"))
+	data, err := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-90.2"), "tsk-90.2.2.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +230,7 @@ func TestAddAcceptsRepeatedAcceptFlags(t *testing.T) {
 func TestAddRefusesAGroupIDTakenOnAnUnmergedBranch(t *testing.T) {
 	root := fixtureRepo(t)
 	runGit(t, root, "checkout", "-b", "feat/TG-08.12-taken")
-	writeGroupFile(t, root, "TG-08.12-taken.md",
+	seedGroup(t, root,
 		"## [TG-08.12] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "taken")
@@ -245,10 +248,10 @@ func TestAddRefusesAGroupIDTakenOnAnUnmergedBranch(t *testing.T) {
 // tree or on an unmerged branch, for both.
 func TestAddNextProposesTheFreeGroupIDAcrossBranches(t *testing.T) {
 	root := fixtureRepo(t)
-	writeGroupFile(t, root, "TG-08.13-untracked.md",
+	seedGroup(t, root,
 		"## [TG-08.13] Untracked [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
 	runGit(t, root, "checkout", "-b", "feat/TG-08.14-taken")
-	writeGroupFile(t, root, "TG-08.14-taken.md",
+	seedGroup(t, root,
 		"## [TG-08.14] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "taken")
@@ -278,7 +281,7 @@ func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
 		t.Fatalf("list during the run = %s; it must show the run's live status", got.stdout)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
+	if data, _ := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-90.2"), "tsk-90.2.1.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
 		t.Fatal("list rewrote the group file")
 	}
 }
@@ -314,7 +317,7 @@ func TestListAfterShipShowsWhatStepSees(t *testing.T) {
 	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
 		t.Fatalf("list after ship = %s; it must show the ship commit's status, as step does", got.stdout)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
+	if data, _ := os.ReadFile(filepath.Join(backlog.GroupDirPath(root, "TG-90.2"), "tsk-90.2.1.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
 		t.Fatal("ship rewrote the root's group file")
 	}
 }
@@ -563,6 +566,7 @@ func TestGateRunsEveryCheckOnAGoModule(t *testing.T) {
 
 // TestNextStartOpensARunTheOtherStationsRead proves next --start cuts a worktree that step and report then see.
 func TestNextStartOpensARunTheOtherStationsRead(t *testing.T) {
+	fakeGh(t) // the first cut under an epic opens the epic's draft pull request
 	root := fixtureRepo(t)
 	runGit(t, root, "push", "-u", "origin", "main")
 	started := runCLI(t, root, "", "next", "--start", "--json")

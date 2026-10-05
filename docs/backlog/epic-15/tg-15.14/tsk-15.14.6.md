@@ -1,0 +1,8 @@
+- [ ] **TSK-15.14.6** The rules say act on your own branch and hand over only the critical set
+  - files: `komodo/AGENTS.md`, `docs/decisions/0015-three-permission-tiers-person-orchestrator-and-line.md`, `docs/lld.md`
+  - accept: AGENTS.md tells a session to switch, delete and clean its own branches and worktrees itself and to hand a person only a critical ref, a remote delete of a critical ref, an external post, spending, or a command the host refused, once and in one line
+  - accept: decision 0015 records the three tiers with their tables
+  - accept: the LLD's permissions section is the matrix doctor checks
+  - done_when: `go run ./cmd/komodo lint`
+  - context: `today: komodo/AGENTS.md says `Landing is a person merging... Hand the user a refused command` and the global ~/.claude/AGENTS.md says the conductor switches branches; sessions read both and ask the person to switch or delete branches they could handle`, `the tier tables are the three in this plan's discussion: person, orchestrator, subagent with and without a role, line, conductor, local model`, `docs/lld.md#permissions`
+  - priority: H

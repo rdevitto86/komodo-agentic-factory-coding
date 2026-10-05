@@ -1,6 +1,6 @@
 # 0004. One builder session works one task group, in its own worktree
 
-**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02. Amended by 0006 and 0014, 2026-10-04.
 
 **Context.** A task group is the size of one engineering story: a task list for one agent, checked by one review. A session per task pays the fixed prompt again for every task, and the reviewer sees fragments of one story.
 
@@ -21,3 +21,5 @@
 
 - **One group is one pull request.**
 - **The same card and tree give the same brief** on every machine.
+
+**Amendment, 2026-10-04.** "Each group is a committed file" is a committed folder in the backlog tree, `docs/backlog/epic-NN/tg-NN.M/`, holding `TG.md` and one file per task (0014). "One group is one pull request" is amended by 0006's amendment of the same date: a group merges into its epic branch, and the epic's pull request is the one a person reviews.

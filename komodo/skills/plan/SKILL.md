@@ -5,7 +5,7 @@ description: /plan: draft task groups from the specs through the planner; each p
 
 # Plan
 
-You turn the PRD and specs into task groups under `docs/backlog/`, one file per group. The planner drafts; you write the file and prove it parses before you stop.
+You turn the PRD and specs into an epic and its task groups under `docs/backlog/`: one folder per epic, one folder per group, one file per task. The planner drafts; you write the tree through `komodo add` and prove it parses before you stop.
 
 Never invent a field; the grammar below is everything the line parses.
 
@@ -13,12 +13,13 @@ Never invent a field; the grammar below is everything the line parses.
 
 ## The steps
 
-1. Run `komodo migrate` first when the repo holds a BACKLOG.md or TODO.md but no `docs/backlog/`; it opens the imported groups in `REFINEMENT` for you to refine below.
+1. Run `komodo migrate` first when the repo holds a BACKLOG.md, a TODO.md or flat files under `docs/backlog/`; it moves them into the tree, opens the imported groups in `REFINEMENT`, and leaves the source for a person to remove.
 2. Name the docs the human gave `/plan`, or the PRD and low-level design when none are named.
-3. Spawn the planner on them, with the goal and the existing groups it must not duplicate. It reads and returns tasks; it never edits.
-4. Write each group it returns as `docs/backlog/<group-id>-<slug>.md`, or append a task with `komodo add <group> <title>`.
-5. Run `komodo lint`. A non-zero exit means the file is wrong: fix it and lint again.
-6. Report each group, its tasks, and the planner's gaps to the human.
+3. Spawn the planner on them, with the goal and the existing epics and groups it must not duplicate. It reads and returns an epic, its goal and version, and the groups under it; it never edits.
+4. Create the epic with `komodo add EPIC-NN "<title>" --version <version>`, which writes `docs/backlog/epic-NN/EPIC.md`; paste the goal paragraph into it.
+5. Create each group with `komodo add TG-NN.M "<title>"`, which writes `docs/backlog/epic-NN/tg-NN.M/TG.md`, then each task with `komodo add TG-NN.M "<task title>" --files <a,b> --done-when "<command>"`, one `tsk-<id>.md` per task.
+6. Run `komodo lint`. A non-zero exit means a file is wrong: fix it and lint again.
+7. Report the epic, each group, its tasks, and the planner's gaps to the human.
 
 ## Rules
 

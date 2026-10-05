@@ -1342,7 +1342,7 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 		}, "check: `exit 4`"},
 		{"ship's backlog edits stay in scope", "true", "true", "", []string{"a.txt"},
 			func(t *testing.T, root string) {
-				writeIn(t, root, "docs/backlog/TG-1.md", "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n")
+				writeIn(t, root, "docs/backlog/epic-1/tg-1/TG.md", "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n")
 			}, ""},
 		{"an edit lands outside scope", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
 			writeIn(t, root, "b.txt", "b\n")

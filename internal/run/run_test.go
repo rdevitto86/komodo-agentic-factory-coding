@@ -272,6 +272,7 @@ const fakeStopFixture = `{"type":"result","subtype":"success","is_error":false,"
 func setupDrainDriveFakeClaude(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
+	installFakeGH(t, dir)
 	script := filepath.Join(dir, "claude")
 	if err := os.WriteFile(script, []byte(drainDriveFakeClaude), 0o755); err != nil {
 		t.Fatal(err)
@@ -341,11 +342,12 @@ func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
 	}
 }
 
-// fakeForge answers pr create with a numbered pull request, pr view with the URL its own head branch
-// got, and label with none, so a lane can look its own pull request back up once Drive ships it.
+// fakeForge answers pr create with a numbered pull request, pr view with its head's URL or the latest
+// with no head, and label with none, so a lane finds its own pull request once Drive ships it.
 func fakeForge(t *testing.T, root string) *pr.Client {
 	var lock sync.Mutex
 	created := 0
+	latest := ""
 	urls := map[string]string{}
 	return &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		lock.Lock()
@@ -354,16 +356,21 @@ func fakeForge(t *testing.T, root string) *pr.Client {
 		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
 			created++
 			url := "https://example.invalid/pr/" + strconv.Itoa(created)
-			urls[argAfter(args, "--head")] = url
+			latest = argAfter(args, "--head")
+			urls[latest] = url
 			return url, nil
 		case len(args) > 2 && args[0] == "pr" && args[1] == "view":
-			if url, ok := urls[args[2]]; ok {
+			head := args[2]
+			if strings.HasPrefix(head, "--") {
+				head = latest
+			}
+			if url, ok := urls[head]; ok {
 				return fmt.Sprintf(`{"number":%d,"url":%q,"state":"OPEN"}`, created, url), nil
 			}
 			return "", fmt.Errorf("no pull request for %s", args[2])
 		case len(args) > 0 && args[0] == "label":
 			return "[]", nil
-		case len(args) > 1 && args[0] == "pr" && args[1] == "ready":
+		case len(args) > 1 && args[0] == "pr" && (args[1] == "ready" || args[1] == "merge"):
 			return "", nil
 		}
 		t.Errorf("gh must not run any other command: %v", args)
@@ -824,6 +831,7 @@ fi
 func TestDriveWithNoShipRunsNoRelayAndStopsBeforeShip(t *testing.T) {
 	root := driveDrainRepo(t, driveDrainText)
 	dir := t.TempDir()
+	installFakeGH(t, dir)
 	script := filepath.Join(dir, "claude")
 	if err := os.WriteFile(script, []byte(noShipArgsFakeClaude), 0o755); err != nil {
 		t.Fatal(err)
@@ -868,6 +876,7 @@ func TestDriveWithNoShipRunsNoRelayAndStopsBeforeShip(t *testing.T) {
 func TestDriveResumedWithNoShipNeverShipsFromShipping(t *testing.T) {
 	root := driveDrainRepo(t, driveDrainText)
 	dir := t.TempDir()
+	installFakeGH(t, dir)
 	script := filepath.Join(dir, "claude")
 	if err := os.WriteFile(script, []byte(noShipArgsFakeClaude), 0o755); err != nil {
 		t.Fatal(err)

@@ -1,6 +1,6 @@
 # 0006. People merge to `main`, and agents work only on their own branches
 
-**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02. Amended 2026-10-04 alongside 0014.
 
 **Context.** The forge is GitHub Free, and the developer's own token is the only credential, so the developer authors every PR and their own approval doesn't count; the merge is the human check. Hosted CI costs minutes and moves failure away from the person who can fix it.
 
@@ -22,3 +22,5 @@
 
 - **`main` gains one PR per epic,** reviewed at its final state.
 - **A person can skip a hook with `--no-verify`;** the human merge is the backstop.
+
+**Amendment, 2026-10-04.** A group opens no pull request. Ship merges a reviewed, checked group into the epic branch as a merge commit carrying the group id and its ticked task list, then pushes the epic branch. The epic pull request's body gains one section per landed group, and the epic PR to `main` is the one review a person does. A blocked group still publishes a `status/blocked` draft PR. The per-group PR size cap moves to `komodo lint`: 20 declared files per group, and `groups_max` groups per epic (0014). `komodo pr create` defaults to the open epic branch.

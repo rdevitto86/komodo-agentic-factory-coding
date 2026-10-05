@@ -169,9 +169,9 @@ func changedFiles(worktree, base string) ([]string, error) {
 	return append(splitLines(tracked), untracked...), nil
 }
 
-// onlyTicks reports whether name is a backlog group file whose every change since the fork flips a task's checkbox.
+// onlyTicks reports whether name is a backlog file whose only changes since the fork are task ticks.
 func onlyTicks(worktree, base, name string) bool {
-	if path.Dir(name) != backlog.GroupFilesDir || path.Ext(name) != ".md" {
+	if !strings.HasPrefix(name, backlog.GroupFilesDir+"/") || path.Ext(name) != ".md" {
 		return false
 	}
 	fork, err := mergeBase(worktree, base)

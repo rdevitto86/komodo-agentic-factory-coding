@@ -15,9 +15,9 @@ You start one group's run and watch it. The conductor in the `komodo` binary dri
 
 ## Reporting
 
-- **Exit 0:** the group shipped. Report its pull request link from the output and how long the run took.
+- **Exit 0:** the group shipped into its epic branch. Report the epic pull request link from the output and how long the run took.
 - **Non-zero:** report the stage that stopped and its reason, quoted from the output, and the command that continues it: `komodo resume <group>`.
-- **Blocked:** a blocked group's note is in its `docs/backlog` file and on its draft pull request; name both.
+- **Blocked:** a blocked group's note is in its `TG.md`, in the group's folder under `docs/backlog`, and on its draft pull request; name both.
 - **Report in the accessibility contract** when the run ends.
 
 ## Rules

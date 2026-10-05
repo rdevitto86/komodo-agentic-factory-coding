@@ -1,5 +1,5 @@
-// Package backlogtest seeds a test repo's docs/backlog group files through the package's own
-// renderer, so a fixture never drifts from the grammar it exercises.
+// Package backlogtest seeds a test repo's docs/backlog tree through the package's own renderer, so a
+// fixture never drifts from the grammar it exercises.
 package backlogtest
 
 import (
@@ -10,23 +10,51 @@ import (
 	"komodo/internal/backlog"
 )
 
-// Seed writes each group as docs/backlog/<group-id>-<slug>.md under root, through the renderer.
+// Seed writes each group as an epic folder, a group folder and one task file per task under root.
 func Seed(t *testing.T, root string, groups ...backlog.GroupFile) {
 	t.Helper()
-	dir := filepath.Join(root, backlog.GroupFilesDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	for _, group := range groups {
-		path := filepath.Join(dir, group.ID+"-"+backlog.Slug(group.Title)+".md")
-		text := backlog.RenderGroupFileDocument(group)
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		epicID := group.EpicID
+		if epicID == "" {
+			epicID = backlog.EpicIDOfGroup(group.ID)
+		}
+		epicPath := filepath.Join(backlog.EpicDir(root, epicID), backlog.EpicFileName)
+		if _, err := os.Stat(epicPath); err != nil {
+			epic := backlog.EpicFile{ID: epicID, Title: "Epic " + epicID, Status: "READY", Version: group.Version,
+				Type: group.Type, GroupsMax: 99}
+			if _, err := backlog.WriteEpic(root, epic); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if backlog.EpicIDOfGroup(group.ID) != epicID {
+			// A group filed under another epic's folder still needs that folder; the loader reports the mismatch.
+			dir := filepath.Join(backlog.EpicDir(root, epicID), backlog.GroupDirName(group.ID))
+			writeGroupDir(t, dir, group)
+			continue
+		}
+		if _, err := backlog.WriteGroup(root, group); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-// SeedText parses an old-grammar backlog fixture and writes its groups as group files, the same
+// writeGroupDir writes a group folder at dir directly, for a fixture that places a group off its number.
+func writeGroupDir(t *testing.T, dir string, group backlog.GroupFile) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, backlog.GroupFileName), []byte(backlog.RenderGroupHeader(group)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range group.Tasks {
+		if err := os.WriteFile(filepath.Join(dir, backlog.TaskFileName(task.ID)), []byte(backlog.RenderGroupFileTask(task)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// SeedText parses an old-grammar backlog fixture and writes its groups into the tree, the same
 // way `komodo migrate` would, so a legacy fixture never has to be hand-translated.
 func SeedText(t *testing.T, root, text string) {
 	t.Helper()

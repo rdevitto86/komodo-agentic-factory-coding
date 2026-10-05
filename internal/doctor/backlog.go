@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,26 +18,24 @@ const stallTasks = 50
 const stallAge = 14 * 24 * time.Hour
 
 // checkStalledBacklog reports a backlog the line cannot drain: more than stallTasks open REFINEMENT
-// tasks, or a REFINEMENT group no commit has touched in stallAge.
+// tasks, or a REFINEMENT group folder no commit has touched in stallAge.
 func checkStalledBacklog(root string, at time.Time) []Problem {
-	paths, _ := filepath.Glob(filepath.Join(root, filepath.FromSlash(backlog.GroupFilesDir), "*.md"))
+	tree, err := backlog.LoadTree(root)
+	if err != nil {
+		return nil
+	}
 	var problems []Problem
 	open := 0
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
+	for _, group := range tree.Groups {
+		if group.File.Status != "REFINEMENT" {
 			continue
 		}
-		file := backlog.ParseGroupFile(string(data))
-		if file.Status != "REFINEMENT" {
-			continue
-		}
-		for _, task := range file.Tasks {
+		for _, task := range group.File.Tasks {
 			if !task.Done {
 				open++
 			}
 		}
-		rel, _ := filepath.Rel(root, path)
+		rel, _ := filepath.Rel(root, group.Dir)
 		touched, err := git.Run(root, "log", "-1", "--format=%ct", "--", filepath.ToSlash(rel))
 		seconds, parseErr := strconv.ParseInt(strings.TrimSpace(touched), 10, 64)
 		if err != nil || parseErr != nil {

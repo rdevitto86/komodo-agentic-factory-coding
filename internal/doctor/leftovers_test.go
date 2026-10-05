@@ -5,46 +5,67 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
-// epicGroupFile renders one docs/backlog group file of epic whose one task is ticked when done.
-func epicGroupFile(id, epic string, done bool) string {
-	box := " "
-	if done {
-		box = "x"
-	}
-	return "## [" + id + "] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: " + epic + "\n```\n\n" +
-		"- [" + box + "] **TSK-" + strings.TrimPrefix(id, "TG-") + ".1** Do it\n  - files: `a.go`\n"
+// seedEpicGroup writes one group of epic into root's docs/backlog tree, its one task ticked when done.
+func seedEpicGroup(t *testing.T, root, id, epic string, done bool) {
+	t.Helper()
+	backlogtest.Seed(t, root, backlog.GroupFile{
+		ID: id, Title: "A group", Priority: "H", Status: "READY", Type: "feat", Version: "0.1.0", EpicID: epic,
+		Tasks: []backlog.GroupTask{{ID: "TSK-" + strings.TrimPrefix(id, "TG-") + ".1", Title: "Do it", Done: done, Files: []string{"a.go"}}},
+	})
 }
 
 func TestDoctorNamesAnEndedEpicsFiles(t *testing.T) {
 	root, _ := pruneRepo(t, openBacklog)
-	write(t, root, "docs/backlog/TG-02.1-a.md", epicGroupFile("TG-02.1", "EPIC-02", true))
-	write(t, root, "docs/backlog/TG-02.2-b.md", epicGroupFile("TG-02.2", "EPIC-02", true))
-	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))
+	seedEpicGroup(t, root, "TG-02.1", "EPIC-02", true)
+	seedEpicGroup(t, root, "TG-02.2", "EPIC-02", true)
+	seedEpicGroup(t, root, "TG-03.1", "EPIC-03", false)
 	var notes []string
 	if _, err := Run(root, Options{Warn: func(note string) { notes = append(notes, note) }}); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(notes, "\n")
-	for _, name := range []string{"TG-02.1-a.md", "TG-02.2-b.md"} {
-		if !strings.Contains(joined, filepath.Join("docs", "backlog", name)+": EPIC-02 has ended") {
-			t.Fatalf("notes = %v, want %s named as an ended epic's file", notes, name)
-		}
+	if !strings.Contains(joined, filepath.Join("docs", "backlog", "epic-02")+": EPIC-02 has ended") {
+		t.Fatalf("notes = %v, want the epic-02 folder named as an ended epic's", notes)
 	}
 	if strings.Contains(joined, "EPIC-03") {
 		t.Fatalf("notes = %v; an epic with an open task has not ended", notes)
 	}
 }
 
-// TestDoctorKeepsAnEpicOpenWhenAFileFailsToParse proves a group file whose checkbox line misses
+// TestDoctorWarnsOfAGroupFileOutsideTheTree proves a flat group file under docs/backlog is a warning
+// naming the migrate command, never a failed check.
+func TestDoctorWarnsOfAGroupFileOutsideTheTree(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	write(t, root, "docs/backlog/TG-05.1-flat.md", "## [TG-05.1] Flat [P: H] [READY]\n\n```yaml\ntype: feat\n```\n")
+	var notes []string
+	problems, err := Run(root, Options{Warn: func(note string) { notes = append(notes, note) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat := filepath.Join("docs", "backlog", "TG-05.1-flat.md")
+	want := flat + ": a group file outside the tree; run komodo migrate, then remove it"
+	if !strings.Contains(strings.Join(notes, "\n"), want) {
+		t.Fatalf("notes = %v, want %q", notes, want)
+	}
+	for _, problem := range problems {
+		if problem.Where == flat {
+			t.Fatalf("problems = %+v; a flat group file warns, it never fails a check", problems)
+		}
+	}
+}
+
+// TestDoctorKeepsAnEpicOpenWhenAFileFailsToParse proves a task file whose checkbox line misses
 // the task grammar never counts as ended, so its epic is not named as outlived.
 func TestDoctorKeepsAnEpicOpenWhenAFileFailsToParse(t *testing.T) {
 	root, _ := pruneRepo(t, openBacklog)
-	write(t, root, "docs/backlog/TG-02.1-a.md", epicGroupFile("TG-02.1", "EPIC-02", true))
-	write(t, root, "docs/backlog/TG-02.2-b.md", "## [TG-02.2] B [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: EPIC-02\n```\n\n"+
-		"- [ ] not a task line, missing the bold id\n")
+	seedEpicGroup(t, root, "TG-02.1", "EPIC-02", true)
+	seedEpicGroup(t, root, "TG-02.2", "EPIC-02", true)
+	write(t, root, "docs/backlog/epic-02/tg-02.2/tsk-02.2.1.md", "- [ ] not a task line, missing the bold id\n")
 	var notes []string
 	if _, err := Run(root, Options{Warn: func(note string) { notes = append(notes, note) }}); err != nil {
 		t.Fatal(err)
@@ -74,7 +95,7 @@ func TestDoctorIgnoresALocalJSONWithNoBaseKey(t *testing.T) {
 
 func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	root, run := pruneRepo(t, openBacklog)
-	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))
+	seedEpicGroup(t, root, "TG-03.1", "EPIC-03", false)
 	owned := filepath.Join(root, ".komodo", "wt", "TG-01.1")
 	byFile := filepath.Join(root, ".komodo", "wt", "TG-03.1")
 	orphan := filepath.Join(root, ".komodo", "wt", "TG-09.9")
@@ -93,7 +114,7 @@ func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 // branch, and sync's transient cleanup-<epic> worktree, are never named as unowned.
 func TestDoctorNeverNamesAnEpicOrCleanupWorktreeAsOrphaned(t *testing.T) {
 	root, run := pruneRepo(t, openBacklog)
-	write(t, root, "docs/backlog/TG-02.1-a.md", epicGroupFile("TG-02.1", "EPIC-02", false))
+	seedEpicGroup(t, root, "TG-02.1", "EPIC-02", false)
 	epic := filepath.Join(root, ".komodo", "wt", "epic-0.1.0")
 	cleanup := filepath.Join(root, ".komodo", "wt", "cleanup-epic-02")
 	run(root, "worktree", "add", "-q", "-b", "feat/0.1.0", epic, "main")

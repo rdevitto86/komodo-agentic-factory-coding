@@ -3,7 +3,6 @@ package line
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -197,20 +196,19 @@ func SplitFindings(findings []Finding, floor string) (repair, file []Finding) {
 	return repair, file
 }
 
-// FileFindings appends the findings under the floor as READY tasks at their severity's priority, newest
-// last, into the group's own docs/backlog file.
+// FileFindings files each finding under the floor as a READY task file in the group's folder, by severity.
 func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if len(findings) == 0 {
 		return nil, nil
 	}
-	groupPath, groupText, found, err := backlog.FindGroupFile(root, groupID)
+	dir, found, err := backlog.Locate(root, groupID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
 		return nil, fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
 	}
-	return fileGroupFileFindings(root, groupPath, groupText, findings)
+	return fileGroupFileFindings(root, dir, findings)
 }
 
 // findingPriority is the task priority each review severity files at.
@@ -231,12 +229,10 @@ func findingProof(root, file string) string {
 	return "komodo lint"
 }
 
-// fileGroupFileFindings appends every unfiled finding to one docs/backlog group file as a READY task with
-// its file and a real proof, so the line runs it instead of leaving it to rot.
-func fileGroupFileFindings(root, path, text string, findings []Finding) ([]string, error) {
-	file := backlog.ParseGroupFile(text)
+// fileGroupFileFindings writes every unfiled finding as its own READY task file with its file and proof.
+func fileGroupFileFindings(root string, dir backlog.GroupDir, findings []Finding) ([]string, error) {
 	titles := map[string]bool{}
-	for _, task := range file.Tasks {
+	for _, task := range dir.File.Tasks {
 		titles[task.Title] = true
 	}
 	var added []string
@@ -255,16 +251,14 @@ func fileGroupFileFindings(root, path, text string, findings []Finding) ([]strin
 			Context:  []string{strings.TrimSpace(finding.Detail + " " + finding.Fix)},
 			Priority: priority, Status: "READY",
 		}
-		next, id, err := backlog.AppendGroupFileTaskWith(text, task)
+		id, _, err := dir.AppendTask(task)
 		if err != nil {
 			return added, err
 		}
-		text = next
+		task.ID = id
+		dir.File.Tasks = append(dir.File.Tasks, task)
 		added = append(added, id)
 		titles[title] = true
 	}
-	if len(added) == 0 {
-		return nil, nil
-	}
-	return added, os.WriteFile(path, []byte(text), 0o644)
+	return added, nil
 }

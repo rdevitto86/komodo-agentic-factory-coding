@@ -1,0 +1,6 @@
+- [ ] **TSK-15.9.3** Prune runs after a Blocked or escalated run too
+  - files: `internal/run/drive.go`, `internal/run/drive_test.go`
+  - accept: pruneLeftovers runs after every drive end, whatever the final state, and never touches the open group's own worktree
+  - done_when: `go test ./internal/run/...`
+  - context: `today: pruneLeftovers runs after the drive only when the final state is Shipped and --no-ship is unset (internal/run/drive.go:87); a Blocked or escalated run never prunes`
+  - priority: H

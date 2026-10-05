@@ -87,7 +87,8 @@ func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 		t.Fatalf("lint = %v, %v; want a task with no done_when to fail", problems, err)
 	}
 	files := t.TempDir()
-	writeFile(t, files, "docs/backlog/TG-40.1-group.md", "not a group file\n")
+	backlogtest.SeedText(t, files, escalateBacklog)
+	writeFile(t, files, "docs/backlog/epic-40/tg-40.1/TG.md", "not a group file\n")
 	if problems, err := lintBacklog(files); err != nil || len(problems) == 0 {
 		t.Fatalf("lint = %v, %v; want a malformed group file to fail", problems, err)
 	}

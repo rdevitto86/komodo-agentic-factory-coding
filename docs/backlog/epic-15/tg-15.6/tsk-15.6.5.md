@@ -1,0 +1,6 @@
+- [ ] **TSK-15.6.5** Sync reconciles a group a person landed by hand
+  - files: `internal/run/sync.go`, `internal/run/sync_test.go`
+  - accept: when every task of a Blocked or escalated group is ticked on origin's epic branch, sync marks its run Shipped and merged and closes its worktree and tip
+  - done_when: `go test ./internal/run/...`
+  - context: `today: the TG-11.27 run stayed Blocked in state.json after a person landed it as #330; nothing reconciles with the forge; openCleanup only runs for an ended epic`, `the signal is the group's task files all ticked on origin/feat/<version>, read with git show as endedEpics does`
+  - priority: H
