@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
@@ -475,6 +476,11 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(ended) > 0 && filepath.Base(ended[0]) == backlog.EpicFileName {
+		if err := insertEpicSection(group, plan.Group, time.Now()); err != nil {
+			return nil, err
+		}
+	}
 	if err := removeEnded(ended); err != nil {
 		return nil, err
 	}
@@ -529,6 +535,35 @@ func endedEpicFiles(worktree, groupID string) ([]string, error) {
 		ended = append(ended, group.Paths()...)
 	}
 	return ended, nil
+}
+
+// insertEpicSection puts the ending epic's section, its goal and every group's title, into the worktree's
+// existing CHANGELOG.md when no heading names its version.
+func insertEpicSection(worktree, groupID string, now time.Time) error {
+	tree, err := backlog.LoadTree(worktree)
+	if err != nil {
+		return err
+	}
+	own, ok := tree.Group(groupID)
+	if !ok || own.Epic.Version == "" {
+		return nil
+	}
+	text, err := changelog.Read(worktree)
+	if err != nil || text == "" {
+		return err
+	}
+	var titles []string
+	for _, group := range tree.Groups {
+		if group.EpicDir == own.EpicDir {
+			titles = append(titles, strings.TrimSpace(group.File.Title))
+		}
+	}
+	section := changelog.Section(own.Epic.Version, now.Format("2006-01-02"), changelog.FirstSentence(own.Epic.Goal), titles)
+	updated := changelog.Insert(text, own.Epic.Version, section)
+	if updated == text {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(worktree, changelog.File), []byte(updated), 0o644)
 }
 
 // removeEnded deletes the ended backlog files, then every folder they leave empty.

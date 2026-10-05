@@ -1913,6 +1913,39 @@ func TestPrepareDeletesTheEpicsGroupFilesOnlyWithItsLastOpenGroup(t *testing.T) 
 	}
 }
 
+func TestInsertEpicSectionAddsTheEndingEpicAboveThePreviousVersionOnce(t *testing.T) {
+	worktree := t.TempDir()
+	files := map[string]string{
+		"docs/backlog/epic-02/EPIC.md": "## [EPIC-02] Two [READY]\n\n```yaml\nversion: 2.0.0\n```\n\nThe line ships. It also cleans up.\n",
+		relGroupPath("TG-02.1"):        "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\n```\n",
+		relTaskPath("TSK-02.1.1"):      "- [x] **TSK-02.1.1** One\n",
+		"CHANGELOG.md":                 "# Changelog\n\n## 1.0.0 — 2026-09-30\n\n- old\n",
+	}
+	for rel, text := range files {
+		path := filepath.Join(worktree, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	for range 2 {
+		if err := insertEpicSection(worktree, "TG-02.1", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Changelog\n\n## 2.0.0 — 2026-10-05\n\nThe line ships.\n\n- Shipping\n\n## 1.0.0 — 2026-09-30\n\n- old\n"
+	if string(got) != want {
+		t.Fatalf("changelog = %q, want %q", got, want)
+	}
+}
+
 // draftForge is a fake forge that refuses drafts when noDrafts is set and fails a label add when noLabels is,
 // recording every gh call.
 func draftForge(dir string, noDrafts, noLabels bool, calls *[]string) *pr.Client {
