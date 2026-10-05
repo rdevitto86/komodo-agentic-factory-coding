@@ -17,7 +17,7 @@ func platformSandbox(goos string) bool {
 }
 
 // lineSandbox is a line session's inline sandbox settings on goos, or empty where it has none: no unsandboxed
-// retry, no start without it, credential paths unreadable, and the forge off the network.
+// retry, no start without it, credential paths unreadable, the forge off the network, and local ports bindable.
 func lineSandbox(overlay mount.Overlay, goos string) string {
 	if !platformSandbox(goos) {
 		return ""
@@ -31,7 +31,10 @@ func lineSandbox(overlay mount.Overlay, goos string) string {
 		"failIfUnavailable":        true,
 		"allowUnsandboxedCommands": false,
 		"filesystem":               filesystem,
-		"network":                  map[string]any{"allowedDomains": offForge(overlay.SandboxDomains)},
+		"network": map[string]any{
+			"allowedDomains":    offForge(overlay.SandboxDomains),
+			"allowLocalBinding": true,
+		},
 	}
 	data, _ := json.Marshal(map[string]any{"sandbox": sandbox})
 	return string(data)

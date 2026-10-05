@@ -1,4 +1,4 @@
-- [ ] **TSK-15.20.1** A builder's test runs git init without writing hooks
+- [x] **TSK-15.20.1** A builder's test runs git init without writing hooks
   - files: `internal/mount/claude/session.go`, `internal/mount/claude/session_test.go`
   - accept: a builder session's environment points git at an empty template directory, so git init in a test writes no .git/hooks the sandbox refuses
   - accept: a test proves the env and that git init with it creates no hooks directory
