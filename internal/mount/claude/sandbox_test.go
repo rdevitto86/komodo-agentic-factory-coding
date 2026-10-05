@@ -18,7 +18,8 @@ type sandboxBlock struct {
 		DenyRead   []string `json:"denyRead"`
 	} `json:"filesystem"`
 	Network struct {
-		AllowedDomains *[]string `json:"allowedDomains"`
+		AllowedDomains    *[]string `json:"allowedDomains"`
+		AllowLocalBinding bool      `json:"allowLocalBinding"`
 	} `json:"network"`
 }
 
@@ -78,6 +79,19 @@ func TestASandboxedSessionCannotReadAForgeCredential(t *testing.T) {
 	for _, want := range []string{filepath.Join(home, ".git-credentials"), filepath.Join(home, ".config", "gh")} {
 		if !containsPath(s.Filesystem.DenyRead, want) {
 			t.Fatalf("denyRead = %v, missing %s", s.Filesystem.DenyRead, want)
+		}
+	}
+}
+
+func TestASandboxedSessionMayBindALocalPort(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, goos := range []string{"darwin", "linux"} {
+		s := parseSandbox(t, lineSandbox(mount.Overlay{SandboxDomains: []string{"github.com"}}, goos))
+		if !s.Network.AllowLocalBinding {
+			t.Fatalf("%s: allowLocalBinding is off; a test listening on 127.0.0.1 is refused", goos)
+		}
+		if s.Network.AllowedDomains == nil || len(*s.Network.AllowedDomains) != 0 {
+			t.Fatalf("%s: allowedDomains = %v; local binding must not open the forge", goos, s.Network.AllowedDomains)
 		}
 	}
 }

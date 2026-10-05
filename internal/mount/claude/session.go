@@ -100,6 +100,8 @@ func Session(
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 	env = setEnv(env, "CLAUDE_CODE_TMPDIR", SessionTmp(worktree))
+	// An empty template dir makes git init copy no templates, so it writes no .git/hooks the sandbox refuses.
+	env = setEnv(env, "GIT_TEMPLATE_DIR", "")
 
 	return argv, env, prompt, nil
 }

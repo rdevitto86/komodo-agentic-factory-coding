@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -390,6 +391,37 @@ func TestSessionEnvSetsGoflags(t *testing.T) {
 	t.Fatal("GOFLAGS not set in env")
 }
 
+func TestSessionEnvMakesGitInitWriteNoHooks(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Brief: "b", Schema: []byte(`{}`)}
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var template []string
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "GIT_TEMPLATE_DIR=") {
+			template = append(template, entry)
+		}
+	}
+	if len(template) != 1 || template[0] != "GIT_TEMPLATE_DIR=" {
+		t.Fatalf("GIT_TEMPLATE_DIR entries = %v, want one empty value", template)
+	}
+
+	// A bare repo keeps its config and hooks out of a .git dir, which a sandbox refuses writing.
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init", "-q", "--bare", repo)
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "config")); err != nil {
+		t.Fatalf("git init made no repo: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "hooks")); !os.IsNotExist(err) {
+		t.Fatalf("git init wrote a hooks dir (stat err %v); the session's env must suppress templates", err)
+	}
+}
+
 func TestSessionEnvSetsClaudeCodeStopHookBlockCap(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
@@ -623,7 +655,7 @@ const fixedSandboxMerge = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"typ
 	`"permissions":{"deny":["Edit(~/.claude/**)"]},"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,` +
 	`"failIfUnavailable":true,"filesystem":{"denyRead":["/home/komodo-fixed-test/.git-credentials",` +
 	`"/home/komodo-fixed-test/.config/git/credentials","/home/komodo-fixed-test/.config/gh"]},` +
-	`"network":{"allowedDomains":[]}}}`
+	`"network":{"allowLocalBinding":true,"allowedDomains":[]}}}`
 
 func TestSessionSettingsPath(t *testing.T) {
 	t.Setenv("HOME", "/home/komodo-fixed-test")
