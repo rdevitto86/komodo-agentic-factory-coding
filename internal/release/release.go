@@ -110,9 +110,9 @@ func Taggable(text string, tags []string) []string {
 		has[strings.TrimPrefix(tag, "v")] = true
 	}
 	var out []string
-	for _, version := range Versions(text) {
-		if !has[version.Number] && !contains(out, version.Number) {
-			out = append(out, version.Number)
+	for _, match := range changelog.Heading.FindAllStringSubmatch(text, -1) {
+		if number := match[1]; !changelog.InProgress(match[0]) && !has[number] && !contains(out, number) {
+			out = append(out, number)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return Compare(out[i], out[j]) < 0 })

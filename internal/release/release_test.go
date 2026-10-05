@@ -15,6 +15,19 @@ import (
 
 const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
 
+func TestAnUnreleasedHeadingIsNeverTaggable(t *testing.T) {
+	text := "# Changelog\n\n## Unreleased — 3.0.0\n\n- next\n\n" + strings.TrimPrefix(twoVersions, "# Changelog\n\n")
+	if got := Taggable(text, nil); len(got) != 2 || got[0] != "1.3.0" || got[1] != "2.0.0" {
+		t.Fatalf("taggable = %v; the version still marked Unreleased must never be tagged", got)
+	}
+	if got := Unreleased(text, []string{"v2.0.0"}); len(got) != 0 {
+		t.Fatalf("unreleased = %v; an Unreleased heading is not a version to tag", got)
+	}
+	if drift := Check(text, nil, []string{"3.0.0"}); len(drift) != 0 {
+		t.Fatalf("drift = %+v; the changelog still names the version in progress", drift)
+	}
+}
+
 func TestNamesMatchesOnlyAWholeHeadingVersion(t *testing.T) {
 	if !Names(twoVersions, "1.3.0") || Names(twoVersions, "1.3") || Names(twoVersions, "3.0.0") {
 		t.Fatal("Names must match exactly the versions the headings carry")

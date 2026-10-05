@@ -40,6 +40,9 @@ func Valid(version string) bool { return validVersion.MatchString(version) }
 // unreleasedHeading matches a heading for the version in progress, which no installer or tag can point at yet.
 var unreleasedHeading = regexp.MustCompile(`^##\s+Unreleased\s`)
 
+// InProgress reports whether a heading line names the version still marked Unreleased.
+func InProgress(heading string) bool { return unreleasedHeading.MatchString(heading) }
+
 // Latest is the highest released version text names, or the empty string when it names none.
 func Latest(text string) string {
 	latest := ""
