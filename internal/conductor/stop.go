@@ -35,6 +35,10 @@ func (l *Line) Block(ctx context.Context, note backlog.BlockerNote) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if l.NoShip {
+		_, err := line.BlockLocal(l.Root, l.Plan, note)
+		return err
+	}
 	result, err := line.ShipBlocked(l.Root, l.Plan, note, l.Client)
 	if err != nil {
 		return err

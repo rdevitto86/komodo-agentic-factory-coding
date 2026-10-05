@@ -726,6 +726,8 @@ type Line struct {
 	Root   string
 	Plan   *line.Plan
 	Client *pr.Client
+	// NoShip keeps a blocker note on its branch, pushing nothing, as the ship station is refused.
+	NoShip bool
 	// checked is the last Check's gates and verify, which Ship reports in the PR body.
 	checked *line.WaveResult
 	// shipped is what Ship did, whose base Merge reads.

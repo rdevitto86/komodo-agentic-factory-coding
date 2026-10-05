@@ -184,7 +184,7 @@ func newDriver(
 	if machine, ok := plan.Profile.Machine("builder"); ok {
 		heavy.Effort = machine.Effort
 	}
-	stations := &conductor.Line{Root: root, Plan: plan, Client: client}
+	stations := &conductor.Line{Root: root, Plan: plan, Client: client, NoShip: noShip}
 	var driverStations conductor.Stations = stations
 	if noShip {
 		driverStations = noShipStations{stations}

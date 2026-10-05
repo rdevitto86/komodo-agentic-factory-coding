@@ -146,6 +146,28 @@ func TestShipBlockedKeepsItsCommitsLocalWhenScrubbed(t *testing.T) {
 	}
 }
 
+// TestBlockLocalCommitsTheWorkAndNoteWithoutPushing proves a no-ship block leaves both commits on the branch and origin untouched.
+func TestBlockLocalCommitsTheWorkAndNoteWithoutPushing(t *testing.T) {
+	root, group := shipRepo(t)
+	stopGroup(t, group)
+	result, err := BlockLocal(root, blockedPlan(), blockedNote)
+	if err != nil || result.URL != "" || len(result.Blocked) != 1 || len(result.Warnings) != 1 {
+		t.Fatalf("result = %+v, %v; want local commits, the open task blocked and one warning", result, err)
+	}
+	out, err := exec.Command("git", "-C", group, "log", "--format=%s", "-2").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subjects := strings.Split(strings.TrimSpace(string(out)), "\n"); len(subjects) != 2 ||
+		!strings.HasPrefix(subjects[0], "docs: A group is blocked") || !strings.HasPrefix(subjects[1], "wip: A group") {
+		t.Fatalf("commits = %q, want the WIP commit then the note", subjects)
+	}
+	out, err = exec.Command("git", "-C", group, "ls-remote", "origin", "refs/heads/feat/a-group").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("ls-remote = %s, %v; want nothing pushed", out, err)
+	}
+}
+
 func TestShipBlockedPushesWithoutAPullRequestClient(t *testing.T) {
 	root, group := shipRepo(t)
 	stopGroup(t, group)

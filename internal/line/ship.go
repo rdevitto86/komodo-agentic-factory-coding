@@ -689,26 +689,8 @@ const blockedLabel = "status/blocked"
 // the branch as a draft PR with the usual labels plus status/blocked; a scrubbed environment keeps both commits local.
 func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.Client) (*ShipResult, error) {
 	worktree := WorktreePath(root, plan.Worktree)
-	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
-	var declared []string
-	for _, task := range plan.Tasks {
-		declared = append(declared, task.Files...)
-	}
-	wip := fmt.Sprintf("wip: %s, blocked at %s (%s)", plan.Title, note.State, plan.Group)
-	if err := commitStaged(worktree, declared, wip); err != nil {
-		return nil, err
-	}
-	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
+	result, declared, err := commitBlocked(worktree, plan, note)
 	if err != nil {
-		return nil, err
-	}
-	note.Saved = fmt.Sprintf("WIP commit `%s` on `%s`", head, plan.Branch)
-	blocked, err := addBlockerNote(worktree, plan.Group, note)
-	if err != nil {
-		return nil, err
-	}
-	result.Blocked = blocked
-	if err := commitStaged(worktree, nil, fmt.Sprintf("docs: %s is blocked (%s)", plan.Title, plan.Group)); err != nil {
 		return nil, err
 	}
 	if scrubbed() {
@@ -734,6 +716,45 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 	blockedLabels, blockedWarnings := labelBlocked(client, url)
 	result.Labels, result.Warnings = append(kept, blockedLabels...), append(warnings, blockedWarnings...)
 	return result, nil
+}
+
+// BlockLocal commits a stopped group's work as WIP and its blocker note on its branch and pushes nothing, as a
+// --no-ship run blocks.
+func BlockLocal(root string, plan *Plan, note backlog.BlockerNote) (*ShipResult, error) {
+	result, _, err := commitBlocked(WorktreePath(root, plan.Worktree), plan, note)
+	if err != nil {
+		return nil, err
+	}
+	result.Warnings = append(result.Warnings, "no-ship: the blocker note is committed on "+plan.Branch+" and not pushed")
+	return result, nil
+}
+
+// commitBlocked makes the WIP commit of the declared files, writes the blocker note and commits it, returning the
+// result so far and the files the plan declares.
+func commitBlocked(worktree string, plan *Plan, note backlog.BlockerNote) (*ShipResult, []string, error) {
+	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	wip := fmt.Sprintf("wip: %s, blocked at %s (%s)", plan.Title, note.State, plan.Group)
+	if err := commitStaged(worktree, declared, wip); err != nil {
+		return nil, nil, err
+	}
+	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return nil, nil, err
+	}
+	note.Saved = fmt.Sprintf("WIP commit `%s` on `%s`", head, plan.Branch)
+	blocked, err := addBlockerNote(worktree, plan.Group, note)
+	if err != nil {
+		return nil, nil, err
+	}
+	result.Blocked = blocked
+	if err := commitStaged(worktree, nil, fmt.Sprintf("docs: %s is blocked (%s)", plan.Title, plan.Group)); err != nil {
+		return nil, nil, err
+	}
+	return result, declared, nil
 }
 
 // credentialNoteSubject is the subject writeCredentialNote commits, so staleReview can skip its own commits too.
