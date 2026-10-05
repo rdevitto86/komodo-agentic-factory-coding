@@ -1,4 +1,4 @@
-- [ ] **TSK-15.3.6** A run records the binary's version and commit in run.json and in every ledger entry
+- [x] **TSK-15.3.6** A run records the binary's version and commit in run.json and in every ledger entry
   - files: `internal/line/worktree.go`, `internal/ledger/ledger.go`, `internal/line/cut.go`, `internal/line/worktree_test.go`, `internal/ledger/ledger_test.go`
   - accept: RunState and ledger.Entry carry `binary` as `<version> (<commit>)`
   - accept: `komodo status` shows it per run

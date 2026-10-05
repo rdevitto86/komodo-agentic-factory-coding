@@ -1,4 +1,4 @@
-- [ ] **TSK-15.3.3** The session-start status hook prints one line when the binary, a global skill or the global rules are stale
+- [x] **TSK-15.3.3** The session-start status hook prints one line when the binary, a global skill or the global rules are stale
   - files: `internal/hooks/status.go`, `internal/hooks/status_test.go`, `internal/mount/claude/claude.go`
   - accept: the hook compares the installed binary's version with the toolkit's bin/.built-from and each rendered global file's bytes with its source
   - accept: on any difference it prints `stale: <what>
