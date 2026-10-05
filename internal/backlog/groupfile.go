@@ -10,7 +10,6 @@ var (
 	groupFileHeading   = regexp.MustCompile(`^##\s+\[(TG-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
 	groupFileTaskLine  = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*(TSK-[\w.]+)\*\*\s+(.+?)\s*$`)
 	groupFileFieldLine = regexp.MustCompile(`^\s{2}-\s+(files|accept|done_when|checks|owner|context|depends_on|priority|status|tier|facets):\s*(.*)$`)
-	groupFileBacktick  = regexp.MustCompile("`([^`]+)`")
 )
 
 // GroupTask is one checkbox task inside a group file, with its optional owner, context, depends_on, priority and status.
@@ -187,17 +186,33 @@ func RenderGroupFileDocument(file GroupFile) string {
 	return out
 }
 
-// splitGroupFileList splits a comma-separated, optionally backtick-quoted list into plain paths.
+// splitGroupFileList splits a comma-separated list into items; a backtick-quoted item keeps its commas.
 func splitGroupFileList(value string) []string {
 	var out []string
-	for _, part := range strings.Split(value, ",") {
-		part = strings.TrimSpace(part)
-		if match := groupFileBacktick.FindStringSubmatch(part); match != nil {
-			part = match[1]
+	rest := value
+	for rest != "" {
+		rest = strings.TrimLeft(rest, " \t,")
+		if rest == "" {
+			break
 		}
-		if part != "" {
-			out = append(out, part)
+		if rest[0] == '`' {
+			end := strings.IndexByte(rest[1:], '`')
+			if end >= 0 {
+				if item := strings.TrimSpace(rest[1 : end+1]); item != "" {
+					out = append(out, item)
+				}
+				rest = rest[end+2:]
+				continue
+			}
 		}
+		next := strings.IndexByte(rest, ',')
+		if next < 0 {
+			next = len(rest)
+		}
+		if item := strings.TrimSpace(rest[:next]); item != "" {
+			out = append(out, item)
+		}
+		rest = rest[next:]
 	}
 	return out
 }

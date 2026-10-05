@@ -1,5 +1,8 @@
 - [x] **TSK-15.2.5** The specs and decisions describe the tree and the amended PR and branch rules
   - files: `docs/lld.md`, `docs/hld.md`, `docs/prd.md`, `docs/decisions/0004-one-builder-session-works-one-task-group-in-its-own-worktree.md`, `docs/decisions/0006-people-merge-to-main-and-agents-work-only-on-their-own-branches.md`, `docs/decisions/0011-specs-are-prd-hld-lld-and-one-file-per-decision.md`, `docs/decisions/0012-agent-worktrees-are-detached-and-only-a-live-builder-holds-a-branch.md`, `docs/decisions/0014-the-backlog-is-a-tree-of-epics-groups-and-tasks.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`
-  - accept: decision 0014 records the tree; 0006 records no group PRs and the lint-time caps; 0012 records the four-condition branch deletion; the LLD states what the code does for budgets, turns, lens effort and loaded skills
+  - accept: decision 0014 records the tree
+  - accept: 0006 records no group PRs and the lint-time caps
+  - accept: 0012 records the four-condition branch deletion
+  - accept: the LLD states what the code does for budgets, turns, lens effort and loaded skills
   - done_when: `go run ./cmd/komodo lint`
   - priority: H

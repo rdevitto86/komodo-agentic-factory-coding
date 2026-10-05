@@ -1,5 +1,7 @@
 - [ ] **TSK-15.6.4** Time used carries across runs and shortens the next deadline
   - files: `internal/conductor/state.go`, `internal/run/drive.go`, `internal/run/run.go`, `internal/conductor/state_test.go`, `internal/run/drive_test.go`
-  - accept: a resumed group's deadline is 60 minutes minus State.TimeUsed; at zero remaining the run escalates with reason `time` without starting a session
+  - accept: a resumed group's deadline is 60 minutes minus State.TimeUsed
+  - accept: at zero remaining the run escalates with reason `time` without starting a session
   - done_when: `go test ./internal/conductor/... ./internal/run/...`
+  - context: `today: State.TimeUsed accumulates (internal/conductor/state.go) but run.go:25 gives every komodo run a fresh 60 minutes, so a group that timed out twice has used 120 minutes against REQ-29's 60`, `docs/prd.md#requirements`
   - priority: H

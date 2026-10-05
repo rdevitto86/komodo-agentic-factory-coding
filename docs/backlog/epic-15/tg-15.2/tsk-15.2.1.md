@@ -1,5 +1,10 @@
 - [x] **TSK-15.2.1** Ship, status, findings, rephase and ordering read the tree
   - files: `internal/line/ship.go`, `internal/line/status.go`, `internal/line/wave.go`, `internal/line/rephase.go`, `internal/line/epic.go`, `internal/line/next.go`, `internal/line/ship_test.go`, `internal/line/status_test.go`, `internal/line/wave_test.go`, `internal/line/rephase_test.go`, `internal/line/epic_test.go`, `internal/line/next_test.go`
-  - accept: the last open group's ship commit deletes the whole epic folder; a tick lands in the task's file; a filed finding becomes a new task file; rephase rewrites EPIC.md's version; the epic PR takes its title and goal from EPIC.md; ReadyGroups orders TG-15.2 before TG-15.10
+  - accept: the last open group's ship commit deletes the whole epic folder
+  - accept: a tick lands in the task's file
+  - accept: a filed finding becomes a new task file
+  - accept: rephase rewrites EPIC.md's version
+  - accept: the epic PR takes its title and goal from EPIC.md
+  - accept: ReadyGroups orders TG-15.2 before TG-15.10
   - done_when: `go test ./internal/line/...`
   - priority: C

@@ -1,5 +1,7 @@
 - [ ] **TSK-15.6.2** An escalation may split a group into a sibling group folder under the same epic
   - files: `internal/conductor/escalate.go`, `internal/conductor/escalate_test.go`, `komodo/roles/escalation.md`
-  - accept: a `split` that writes docs/backlog/epic-NN/tg-NN.M+1/ with TG.md and task files passes outsideGroupFile and lint; the new group is READY and the old group keeps only what it finished
+  - accept: a `split` that writes docs/backlog/epic-NN/tg-NN.M+1/ with TG.md and task files passes outsideGroupFile and lint
+  - accept: the new group is READY and the old group keeps only what it finished
   - done_when: `go test ./internal/conductor/...`
+  - context: `today: outsideGroupFile (internal/conductor/escalate.go:159-173) allows the group's own folder and a new sibling folder since TG-15.2; the role still says `edit only the group's folder`; the split must pass d.lint, which is run.lintBacklog`, `the new group's status is READY and its tasks are the ones the old group did not finish; the old group keeps its ticked tasks`
   - priority: C

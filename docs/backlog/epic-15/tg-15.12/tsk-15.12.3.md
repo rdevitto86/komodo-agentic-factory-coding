@@ -2,5 +2,5 @@
   - files: `internal/guard/tokenize.go`, `internal/guard/table.go`, `internal/guard/guard_test.go`
   - accept: diff-tree, diff-index, diff-files, whatchanged and range-diff join gitOutputCommands, with one table row each
   - done_when: `go test ./internal/guard/...`
-  - context: `was TSK-11.29.3`
+  - context: `was TSK-11.29.3`, `today: gitOutputCommands lists diff, log, show and format-patch only; diff-tree -p HEAD --output=x wrote a 29 KB file from this tree past the guard`
   - priority: M

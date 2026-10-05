@@ -2,4 +2,5 @@
   - files: `internal/guard/hook.go`, `internal/guard/hook_test.go`
   - accept: each refusal file under .komodo/runs/guard-refusals carries the role, the rule and, for a shell call, the command class that would have allowed it or `none`
   - done_when: `go test ./internal/guard/...`
+  - context: `today: refusal files under .komodo/runs/guard-refusals hold a message and a count only (internal/guard/hook.go:123); this machine's three files show a line session refused for /dev/stdout and $TMPDIR, with no role recorded`, `docs/prd.md#requirements`
   - priority: M

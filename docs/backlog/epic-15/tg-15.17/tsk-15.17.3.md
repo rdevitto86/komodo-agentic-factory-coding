@@ -2,4 +2,5 @@
   - files: `internal/doctor/render.go`, `internal/doctor/render_test.go`
   - accept: an allow in settings.local.json or the global settings that a rendered deny covers, such as `Bash(git *)` beside the critical-ref denies, is a note naming both
   - done_when: `go test ./internal/doctor/...`
+  - context: `today: ~/.claude/settings.json holds 49 hand-written allows including Bash(git push:*) and .claude/settings.local.json allows Bash(git *); komodo never reads them; a hand allow that a rendered deny covers is harmless but confusing, and after TSK-15.14.2 the only rendered rules are the allow list for reversible git`
   - priority: M

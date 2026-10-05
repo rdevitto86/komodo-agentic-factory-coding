@@ -1,5 +1,9 @@
 - [ ] **TSK-15.18.4** Every role with a shell declares its command classes
   - files: `komodo/roles/responder.md`, `komodo/roles/tester.md`, `komodo/roles/escalation.md`, `komodo/roles/scout.md`, `internal/mount/claude/permissions_test.go`
-  - accept: responder: files, git-read, build, test, lint, format, komodo-check; tester: files, build, test, lint, format; escalation and scout gain komodo-check; a test fails on a shell role with no classes
+  - accept: responder: files, git-read, build, test, lint, format, komodo-check
+  - accept: tester: files, build, test, lint, format
+  - accept: escalation and scout gain komodo-check
+  - accept: a test fails on a shell role with no classes
   - done_when: `go test ./internal/mount/claude/...`
+  - context: `today: responder and tester declare tools with shell but no commands: line (komodo/roles/responder.md, tester.md), so roleTools and rolePermissions render an undefined allow set; escalation has git-read only and cannot run komodo lint on its own split`
   - priority: H

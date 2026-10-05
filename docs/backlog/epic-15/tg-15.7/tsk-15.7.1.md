@@ -1,5 +1,7 @@
 - [ ] **TSK-15.7.1** A session with no stream event for ten minutes is stopped and escalates as idle
   - files: `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
-  - accept: drain waits on an idle timer reset by every event; on expiry it stops the session's process group and escalates with reason `idle` and the last event's time
+  - accept: drain waits on an idle timer reset by every event
+  - accept: on expiry it stops the session's process group and escalates with reason `idle` and the last event's time
   - done_when: `go test ./internal/conductor/...`
+  - context: `today: drain (internal/conductor/drive.go:691-706) selects on ctx.Done and the next event only; a silent session holds until the 60-minute group deadline`, `docs/lld.md#pacing-limits-and-loop-detection`, `stop through Host.Stop so the whole process group dies, as a normal end does (internal/mount/claude/contract.go)`
   - priority: C

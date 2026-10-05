@@ -1,5 +1,7 @@
 - [ ] **TSK-15.6.6** Review files follow-ups into a new REFINEMENT sibling group, never into the running group
   - files: `internal/line/wave.go`, `internal/line/findings.go`, `internal/line/wave_test.go`, `internal/line/findings_test.go`
-  - accept: FileFindings creates docs/backlog/epic-NN/tg-NN.<next>/ with status REFINEMENT and one task file per finding; the running group's folder is untouched
+  - accept: FileFindings creates docs/backlog/epic-NN/tg-NN.<next>/ with status REFINEMENT and one task file per finding
+  - accept: the running group's folder is untouched
   - done_when: `go test ./internal/line/...`
+  - context: `today: FileFindings (internal/line/wave.go:202-269) appends findings into the running group, which grew TG-11.27 from 9 to 15 tasks mid-run and broke its cap; the escalation then flipped them to REFINEMENT`, `the sibling is the next free group under the epic (backlog.NextGroupID), status REFINEMENT so no builder picks it up until a person promotes it`
   - priority: H

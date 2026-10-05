@@ -1,6 +1,7 @@
 - [ ] **TSK-15.7.11** A builder's sandbox lets a test run git init
   - files: `internal/mount/claude/session.go`, `internal/mount/claude/session_test.go`
-  - accept: a builder session's environment points git at an empty template, so git init in a test writes no .git/hooks the sandbox refuses; a test proves the env and that git init with it creates no hooks directory
+  - accept: a builder session's environment points git at an empty template, so git init in a test writes no .git/hooks the sandbox refuses
+  - accept: a test proves the env and that git init with it creates no hooks directory
   - done_when: `go test ./internal/mount/claude/...`
-  - context: `was TSK-11.28.1`
+  - context: `was TSK-11.28.1`, `today: a builder test that runs git init writes .git/hooks, which the sandbox refuses; git's init.templateDir pointed at an empty directory writes none`
   - priority: M

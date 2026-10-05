@@ -1,5 +1,6 @@
 - [x] **TSK-15.1.2** Writers target the right file: a tick to the task file, a note to TG.md, a new task to a new file
   - files: `internal/backlog/tree.go`, `internal/backlog/note.go`, `internal/backlog/tree_test.go`, `internal/backlog/note_test.go`
-  - accept: GroupDir.WriteTaskStatus, WriteNote, RemoveNote, SetStatus and AppendTask each touch one file; Locate and LocateTask replace every ad hoc finder
+  - accept: GroupDir.WriteTaskStatus, WriteNote, RemoveNote, SetStatus and AppendTask each touch one file
+  - accept: Locate and LocateTask replace every ad hoc finder
   - done_when: `go test ./internal/backlog/...`
   - priority: C

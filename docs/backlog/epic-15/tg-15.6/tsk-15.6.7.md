@@ -2,4 +2,5 @@
   - files: `internal/run/drive.go`, `komodo/roles/escalation.md`, `internal/run/drive_test.go`
   - accept: the brief carries `logs: <worktree>/.komodo/sessions/` and `folder: docs/backlog/epic-NN/tg-NN.M/` so the role reads both without guessing
   - done_when: `go test ./internal/run/...`
+  - context: `today: the brief (internal/run/drive.go:238-264) carries group, branch, left state, reason and tasks; session logs live at <worktree>/.komodo/sessions/<id>.jsonl and .err but nothing points the role at them`, `komodo/roles/escalation.md holds the brief template; add two lines under # Escalation`
   - priority: M
