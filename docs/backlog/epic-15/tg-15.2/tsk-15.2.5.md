@@ -5,4 +5,5 @@
   - accept: 0012 records the four-condition branch deletion
   - accept: the LLD states what the code does for budgets, turns, lens effort and loaded skills
   - done_when: `go run ./cmd/komodo lint`
+  - context: `before: decision 0006 said the conductor merges a group PR into the epic branch; 0012 forbade deleting any local branch; the LLD claimed per-role turn caps, a USD budget, per-session minute limits and a cache-friendly slot order; README listed run, review, backlog, respond as the skills`, `landed in cc0583e2: 0014 records the tree; 0006, 0012, 0004 and 0011 carry dated amendments; the LLD states what the code does; CHANGELOG has an Unreleased 1.0.0-beta.6 section; install.sh and install.ps1 default to v1.0.0-beta.5`
   - priority: H

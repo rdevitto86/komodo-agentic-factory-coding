@@ -3,4 +3,5 @@
   - accept: GroupDir.WriteTaskStatus, WriteNote, RemoveNote, SetStatus and AppendTask each touch one file
   - accept: Locate and LocateTask replace every ad hoc finder
   - done_when: `go test ./internal/backlog/...`
+  - context: `before: three finders read the flat directory: backlog.FindGroupFile (note.go:116), cmd findGroupFile (backlog.go:224), line.findTaskGroupFile (status.go:204); SetGroupFileTaskStatus rewrote the whole group file`, `landed in cc0583e2: GroupDir.WriteTaskStatus writes the task file, WriteNote and RemoveNote write TG.md, AppendTask writes tsk-<id>.md; FindGroupFile now returns TG.md`
   - priority: C

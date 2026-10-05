@@ -3,4 +3,5 @@
   - accept: a fresh repo after komodo init lints clean
   - accept: backlogtest.Seed writes an EPIC.md per epic and a folder per group
   - done_when: `go test ./cmd/komodo/...`
+  - context: `before: templates/project/docs/backlog/TG-01.1-example-group.md and backlogtest.Seed wrote flat files; 40 test files pinned the layout`, `landed in cc0583e2: the starter epic-01 tree; Seed writes an EPIC.md per epic from EpicID or the TG number; cmd/komodo tests moved to the tree`
   - priority: H

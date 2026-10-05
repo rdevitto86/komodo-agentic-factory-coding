@@ -7,4 +7,5 @@
   - accept: the epic PR takes its title and goal from EPIC.md
   - accept: ReadyGroups orders TG-15.2 before TG-15.10
   - done_when: `go test ./internal/line/...`
+  - context: `before: endedEpicFiles globbed docs/backlog/*.md (ship.go:507); writeStatus walked flat files; FileFindings appended into the running group; rephase rewrote version per group file; epicTitle came from the synthesized title; ReadyGroups sorted by path so TG-11.10 preceded TG-11.2`, `landed in cc0583e2 by the line worker: endedEpicFiles lists EPIC.md plus every group's paths and removeEnded deletes the emptied folders; writeStatus uses LocateTask; FileFindings uses AppendTask; rephase rewrites EPIC.md; epic.go reads Epic.Title and Epic.Goal; readyGroups sorts numerically`
   - priority: C
