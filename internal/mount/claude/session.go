@@ -94,7 +94,8 @@ func Session(
 	// Go's caches live under the worktree's .komodo, which the sandbox allows and a ship never stages.
 	goDir := filepath.Join(worktree, ".komodo", "go")
 	env = setEnv(env, "GOCACHE", filepath.Join(goDir, "cache"))
-	env = setEnv(env, "GOTMPDIR", filepath.Join(goDir, "tmp"))
+	// Test temp dirs follow GOTMPDIR; outside the worktree the sandbox lets git init write .git/config.
+	env = setEnv(env, "GOTMPDIR", SessionTmp(worktree))
 	env = setEnv(env, "GOPATH", filepath.Join(goDir, "path"))
 	env = setEnv(env, "GOMODCACHE", filepath.Join(goDir, "path", "pkg", "mod"))
 	env = setEnv(env, "GOPROXY", "off")

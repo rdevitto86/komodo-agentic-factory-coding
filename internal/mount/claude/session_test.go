@@ -290,8 +290,8 @@ func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOTMPDIR=") {
-			if !strings.HasSuffix(entry, "GOTMPDIR=/worktree/.komodo/go/tmp") {
-				t.Errorf("GOTMPDIR not in worktree: %s", entry)
+			if entry != "GOTMPDIR="+SessionTmp("/worktree") {
+				t.Errorf("GOTMPDIR = %s, want the session's temp root outside the worktree", entry)
 			}
 			return
 		}
@@ -407,17 +407,26 @@ func TestSessionEnvMakesGitInitWriteNoHooks(t *testing.T) {
 		t.Fatalf("GIT_TEMPLATE_DIR entries = %v, want one empty value", template)
 	}
 
-	// A bare repo keeps its config and hooks out of a .git dir, which a sandbox refuses writing.
-	repo := t.TempDir()
-	cmd := exec.Command("git", "init", "-q", "--bare", repo)
+	// The repo's tests run a non-bare git init under GOTMPDIR, which the sandbox allows only outside the worktree.
+	tmp := ""
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, "GOTMPDIR="); ok {
+			tmp = value
+		}
+	}
+	if rel, err := filepath.Rel("/worktree", tmp); tmp == "" || err != nil || !strings.HasPrefix(rel, "..") {
+		t.Fatalf("GOTMPDIR = %q, want a dir outside the worktree", tmp)
+	}
+	repo := filepath.Join(t.TempDir(), "w")
+	cmd := exec.Command("git", "init", "-q", "-b", "main", repo)
 	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "config")); err != nil {
+	if _, err := os.Stat(filepath.Join(repo, ".git", "config")); err != nil {
 		t.Fatalf("git init made no repo: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "hooks")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(repo, ".git", "hooks")); !os.IsNotExist(err) {
 		t.Fatalf("git init wrote a hooks dir (stat err %v); the session's env must suppress templates", err)
 	}
 }
