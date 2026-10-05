@@ -109,8 +109,19 @@ func Sweep(root string) {
 		defer os.Remove(lock)
 		var refreshed []string
 		if Refresh != nil {
+			at := root
+			if !repo {
+				// An empty root mounts no host and holds no bin or toolkit, so only the machine layer refreshes.
+				empty, err := os.MkdirTemp("", "komodo-sweep-")
+				if err != nil {
+					result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
+					return
+				}
+				defer os.RemoveAll(empty)
+				at = empty
+			}
 			var err error
-			if refreshed, err = Refresh(root); err != nil {
+			if refreshed, err = Refresh(at); err != nil {
 				result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
 				return
 			}

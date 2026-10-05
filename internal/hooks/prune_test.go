@@ -93,15 +93,56 @@ func TestThePruneHookLaunchesTheSweepInARepoWithoutKomodoState(t *testing.T) {
 	}
 }
 
+func TestAMachineSweepWithNoHomeDoesNothing(t *testing.T) {
+	root, _ := bareRepo(t)
+	t.Setenv("HOME", "")
+	t.Setenv(sweepMachineEnv, "1")
+	launched := false
+	old := launch
+	launch = func(string, bool) error { launched = true; return nil }
+	t.Cleanup(func() { launch = old })
+	if out, err := startSweep(context.Background(), Input{Root: root}); err != nil || out.Verdict != Allow || launched {
+		t.Fatalf("startSweep = %+v, %v, launched = %v; want a silent allow with no home to log in", out, err, launched)
+	}
+	refreshed := false
+	oldRefresh := Refresh
+	Refresh = func(string) ([]string, error) { refreshed = true; return nil, nil }
+	t.Cleanup(func() { Refresh = oldRefresh })
+	Sweep(root)
+	if refreshed {
+		t.Fatal("a machine sweep with no home refreshed anyway")
+	}
+}
+
 func TestSweepWithoutKomodoStateRefreshesTheMachineAndSkipsThePrune(t *testing.T) {
 	root, home := bareRepo(t)
 	t.Setenv(sweepMachineEnv, "1")
 	pruned := false
 	swapPrune(t, func() ([]string, error) { pruned = true; return nil, nil })
 	old := Refresh
-	Refresh = func(string) ([]string, error) { return []string{"binary /home/.komodo/bin/komodo"}, nil }
+	var refreshedAt string
+	var refreshedHeld []os.DirEntry
+	Refresh = func(at string) ([]string, error) {
+		refreshedAt = at
+		refreshedHeld, _ = os.ReadDir(at)
+		return []string{"binary /home/.komodo/bin/komodo"}, nil
+	}
 	t.Cleanup(func() { Refresh = old })
+	for _, rel := range []string{"bin/komodo", "komodo/AGENTS.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte("the repo's own"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	Sweep(root)
+	if refreshedAt == "" || refreshedAt == root || len(refreshedHeld) != 0 {
+		t.Fatalf("refresh ran at %q holding %v; want an empty root, never the repo's bin or komodo tree", refreshedAt, refreshedHeld)
+	}
+	if _, err := os.Stat(refreshedAt); !os.IsNotExist(err) {
+		t.Fatalf("the empty refresh root %s survived the sweep: %v", refreshedAt, err)
+	}
 	if pruned {
 		t.Fatal("a repo with no .komodo was pruned")
 	}

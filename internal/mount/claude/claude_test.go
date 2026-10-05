@@ -1188,6 +1188,36 @@ func writeAt(t *testing.T, dir, rel, body string, at time.Time) {
 	}
 }
 
+func TestStaleGlobalNamesAnOldMarkerAndSkipsAMissingHome(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	marker := filepath.Join(home, Dir, globalSkillsMarker)
+	writeAt(t, filepath.Join(home, Dir), globalSkillsMarker, "adhoc\nrun\n", time.Now())
+	if got := staleGlobal(root); !slices.Contains(got, marker) {
+		t.Fatalf("staleGlobal = %v, want the old marker %s named", got, marker)
+	}
+	t.Setenv("HOME", "")
+	if got := staleGlobal(root); got != nil {
+		t.Fatalf("staleGlobal = %v with no home, want nothing", got)
+	}
+}
+
+func TestStaleGlobalHooksNamesSettingsItCannotRead(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	invalid := filepath.Join(dir, "invalid.json")
+	if err := os.WriteFile(invalid, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(dir, "absent.json"), invalid} {
+		if !staleGlobalHooks(path) {
+			t.Fatalf("staleGlobalHooks(%s) = false, want settings it cannot read named stale", path)
+		}
+	}
+}
+
 // TestTheGlobalRenderWritesTheRulesAndLeavesClaudeMdAlone proves ~/.claude/AGENTS.md holds the rendered rules,
 // the marker lists it, and the CLAUDE.md importing it keeps its bytes.
 func TestTheGlobalRenderWritesTheRulesAndLeavesClaudeMdAlone(t *testing.T) {
