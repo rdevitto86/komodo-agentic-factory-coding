@@ -1,4 +1,4 @@
-- [ ] **TSK-15.20.5** Sweep captures its refresh and prune hooks before its goroutine starts, so the hooks tests pass under the race detector
+- [x] **TSK-15.20.5** Sweep captures its refresh and prune hooks before its goroutine starts, so the hooks tests pass under the race detector
   - files: `internal/hooks/prune.go`, `internal/hooks/prune_test.go`
   - accept: Sweep reads the Refresh and prune package variables on the calling goroutine and hands the copies to its goroutine
   - accept: go test -race -count=1 -shuffle=on ./internal/hooks/... passes 5 runs in a row
