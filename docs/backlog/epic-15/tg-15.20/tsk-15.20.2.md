@@ -1,4 +1,4 @@
-- [ ] **TSK-15.20.2** A sandboxed test binds a local port
+- [x] **TSK-15.20.2** A sandboxed test binds a local port
   - files: `internal/mount/claude/sandbox.go`, `internal/mount/claude/sandbox_test.go`
   - accept: lineSandbox sets network.allowLocalBinding true, so a test may listen on 127.0.0.1
   - accept: the forge stays off the network and no other sandbox field changes
