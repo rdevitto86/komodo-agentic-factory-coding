@@ -535,3 +535,33 @@ func TestRunStartsOneReviewerSessionPerLens(t *testing.T) {
 		})
 	}
 }
+
+// TestAnEditedRestartSettlesTheBlockersEscalation proves the edited restart clears the flags the blocker
+// left, so Next moves it to Building instead of asking the orchestrator the settled question again.
+func TestAnEditedRestartSettlesTheBlockersEscalation(t *testing.T) {
+	saved := conductor.State{
+		Group: "TG-40.1", Current: conductor.Blocked, Edited: true,
+		Escalate: true, Answered: true, Stop: true, Needs: "a decision the edit made", Left: conductor.Building,
+	}
+	got := editedRestart(saved)
+	if got.Current != conductor.Ready || !got.SlotFree || got.Edited {
+		t.Fatalf("edited restart = %+v, want Ready with its slot and Edited cleared", got)
+	}
+	if got.Escalate || got.Answered || got.Stop || got.Needs != "" {
+		t.Fatalf("edited restart kept the blocker's escalation: %+v", got)
+	}
+	if next := conductor.Next(got); next.Move != conductor.Building {
+		t.Fatalf("Next after the edited restart = %s (%s), want Building", next.Move, next.Why)
+	}
+}
+
+// TestAResumedReadyGroupTakesItsSlot proves a run resumed at Ready never waits on a slot no other group holds.
+func TestAResumedReadyGroupTakesItsSlot(t *testing.T) {
+	got := slotted(conductor.State{Group: "TG-40.1", Current: conductor.Ready})
+	if next := conductor.Next(got); next.Move != conductor.Building {
+		t.Fatalf("Next for a resumed Ready group = %s (%s), want Building", next.Move, next.Why)
+	}
+	if other := slotted(conductor.State{Group: "TG-40.1", Current: conductor.Checking}); other.SlotFree {
+		t.Fatalf("a group past Ready took a slot: %+v", other)
+	}
+}

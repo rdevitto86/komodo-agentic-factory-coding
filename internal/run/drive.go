@@ -101,16 +101,31 @@ func driveState(
 		if text, ok := editedGroup(worktree, plan.Group); ok {
 			driver.Builder.Brief = "# The group, as a person edited it\n\n" + text + "\n\n" + driver.Builder.Brief
 		}
-		saved.Current, saved.SlotFree, saved.Edited = conductor.Ready, true, false
-		return driver.Drive(ctx, saved)
+		return driver.Drive(ctx, editedRestart(saved))
 	}
 	if err == nil {
-		return driver.Resume(ctx, saved)
+		return driver.Resume(ctx, slotted(saved))
 	}
 	fresh := conductor.State{
 		Group: plan.Group, Worktree: worktree, Branch: plan.Branch, Current: conductor.Ready, SlotFree: true,
 	}
 	return driver.Drive(ctx, fresh)
+}
+
+// editedRestart turns a blocked group a person edited into a fresh Ready start: its slot taken and
+// the blocker's escalation settled, so the question the edit answered is never asked again.
+func editedRestart(s conductor.State) conductor.State {
+	s.Current, s.SlotFree, s.Edited = conductor.Ready, true, false
+	s.Escalate, s.Answered, s.Stop, s.Needs = false, false, false, ""
+	return s
+}
+
+// slotted gives a saved Ready state its slot, since a targeted run never waits on another group's.
+func slotted(s conductor.State) conductor.State {
+	if s.Current == conductor.Ready {
+		s.SlotFree = true
+	}
+	return s
 }
 
 // cutIfNeeded returns the group's own run, clearing leftovers then cutting its branch and worktree when
