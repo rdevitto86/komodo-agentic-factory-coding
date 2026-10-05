@@ -1289,59 +1289,6 @@ func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
 	}
 }
 
-func TestCheckPRSizeRefusesOverEitherCeiling(t *testing.T) {
-	if err := checkPRSize("TG-1", 5, 100, 0, 0); err != nil {
-		t.Fatalf("a zero ceiling must never refuse: %v", err)
-	}
-	if err := checkPRSize("TG-1", 21, 100, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a file count over the cap must name a split", err)
-	}
-	if err := checkPRSize("TG-1", 5, 2001, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a line count over the cap must name a split", err)
-	}
-}
-
-func TestShipRefusesAGroupOverThePullRequestFileCeiling(t *testing.T) {
-	root, group := shipRepo(t)
-	runGit(t, group, "branch", "main")
-	for _, name := range []string{"two.go", "three.go"} {
-		if err := os.WriteFile(filepath.Join(group, name), []byte("package a\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runGit(t, group, "add", "-A")
-	runGit(t, group, "commit", "-m", "work")
-	plan := &Plan{
-		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
-		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
-	}
-	plan.Profile.PRFiles = 1
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a diff over the file ceiling must refuse and name a split", err)
-	}
-}
-
-func TestShipRefusesAGroupOverThePullRequestLineCeiling(t *testing.T) {
-	root, group := shipRepo(t)
-	runGit(t, group, "branch", "main")
-	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, group, "add", "-A")
-	runGit(t, group, "commit", "-m", "work")
-	plan := &Plan{
-		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
-		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
-	}
-	plan.Profile.PRLinesMax = 3
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
-		t.Fatalf("err = %v; a diff over the line ceiling must refuse and name a split", err)
-	}
-}
-
 func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
 	root, group := shipRepo(t)
 	runGit(t, group, "branch", "main")
@@ -1966,6 +1913,39 @@ func TestPrepareDeletesTheEpicsGroupFilesOnlyWithItsLastOpenGroup(t *testing.T) 
 	}
 }
 
+func TestInsertEpicSectionAddsTheEndingEpicAboveThePreviousVersionOnce(t *testing.T) {
+	worktree := t.TempDir()
+	files := map[string]string{
+		"docs/backlog/epic-02/EPIC.md": "## [EPIC-02] Two [READY]\n\n```yaml\nversion: 2.0.0\n```\n\nThe line ships. It also cleans up.\n",
+		relGroupPath("TG-02.1"):        "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\n```\n",
+		relTaskPath("TSK-02.1.1"):      "- [x] **TSK-02.1.1** One\n",
+		"CHANGELOG.md":                 "# Changelog\n\n## 1.0.0 — 2026-09-30\n\n- old\n",
+	}
+	for rel, text := range files {
+		path := filepath.Join(worktree, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	for range 2 {
+		if err := insertEpicSection(worktree, "TG-02.1", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Changelog\n\n## 2.0.0 — 2026-10-05\n\nThe line ships.\n\n- Shipping\n\n## 1.0.0 — 2026-09-30\n\n- old\n"
+	if string(got) != want {
+		t.Fatalf("changelog = %q, want %q", got, want)
+	}
+}
+
 // draftForge is a fake forge that refuses drafts when noDrafts is set and fails a label add when noLabels is,
 // recording every gh call.
 func draftForge(dir string, noDrafts, noLabels bool, calls *[]string) *pr.Client {
@@ -2049,6 +2029,24 @@ func TestEveryPullRequestOpensAsADraftAndTurnsReadyOnlyOnceItsChecksPassed(t *te
 				t.Fatalf("labels = %v; status/wip kept = %v, want %v", result.Labels, hasWip, tc.wantWip)
 			}
 		})
+	}
+}
+
+func TestAReadyGroupOnAnEpicBranchWarnsWhenTheEpicGateCannotRun(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "feat/9.9.9", Branch: "feat/a-group", Worktree: "group",
+		Version: "9.9.9", Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var calls []string
+	result, err := ShipGroup(root, plan, []*WaveResult{{OK: true}}, draftForge(group, false, false, &calls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Ready || !slices.ContainsFunc(result.Warnings, func(w string) bool {
+		return strings.Contains(w, "the epic pull request stays a draft: ")
+	}) {
+		t.Fatalf("result = %+v; the group readies and the epic gate's failure is a warning", result)
 	}
 }
 

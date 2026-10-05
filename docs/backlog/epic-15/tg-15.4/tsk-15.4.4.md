@@ -1,4 +1,4 @@
-- [ ] **TSK-15.4.4** An epic pull request turns ready only when its diff adds no backlog file and the changelog names its version
+- [x] **TSK-15.4.4** An epic pull request turns ready only when its diff adds no backlog file and the changelog names its version
   - files: `internal/line/epic.go`, `internal/pr/pr.go`, `internal/line/epic_test.go`
   - accept: marking the epic PR ready is refused, naming the files, while `git diff main...feat/<version> -- docs/backlog` adds any file
   - accept: it is refused while CHANGELOG.md has no heading for the version

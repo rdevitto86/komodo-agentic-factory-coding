@@ -1181,6 +1181,28 @@ func TestPreCommitHookSkipsADetachedHead(t *testing.T) {
 	}
 }
 
+// TestPushProblemNamesBacklogFilesAddedToACriticalRef proves a push to main names each backlog path its
+// commits add over origin's copy, and the same commits pushed to an epic branch go.
+func TestPushProblemNamesBacklogFilesAddedToACriticalRef(t *testing.T) {
+	root, from, _ := pushRepo(t, "docs/backlog/epic-01/EPIC.md", "# EPIC-01\n")
+	gitCommand(t, root, "branch", "-M", "main")
+	gitCommand(t, root, "update-ref", "refs/remotes/origin/main", from)
+	gitCommand(t, root, "branch", "feat/1.0.0")
+	policy := guard.DefaultPolicy()
+	t.Setenv(lease.RunEnv, "")
+	problem := PushProblem(root, "refs/heads/main", policy, time.Now())
+	if !strings.Contains(problem, "docs/backlog/epic-01/EPIC.md") {
+		t.Fatalf("problem = %q, want the added backlog file named", problem)
+	}
+	if problem := PushProblem(root, "refs/heads/feat/1.0.0", policy, time.Now()); problem != "" {
+		t.Fatalf("an epic branch carrying backlog files refused: %q", problem)
+	}
+	// No local master and no origin copy: HEAD is diffed against the empty tree.
+	if problem := PushProblem(root, "refs/heads/master", policy, time.Now()); !strings.Contains(problem, "docs/backlog/epic-01/EPIC.md") {
+		t.Fatalf("problem = %q, want a new critical ref's backlog file named", problem)
+	}
+}
+
 // TestPushProblemRefusesALeasedBranchExceptToItsOwnRun proves a person's push to a live lease is refused
 // with the group, pid and lapse time, the lease's own run passes, and a lapsed lease frees the branch.
 func TestPushProblemRefusesALeasedBranchExceptToItsOwnRun(t *testing.T) {

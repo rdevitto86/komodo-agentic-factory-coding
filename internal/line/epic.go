@@ -3,9 +3,12 @@ package line
 import (
 	"context"
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -27,8 +30,27 @@ func EpicBranchName(version string) string {
 	return "feat/" + version
 }
 
-// OpenEpic cuts the plan's epic branch from main, pushes it, and opens its draft pull request
-// to main, the first time a group of that epic cuts; an existing branch is left alone.
+// OpenEpicBranch is the branch of the newest epic on disk whose branch origin holds, else empty.
+func OpenEpicBranch(root string) string {
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	for _, epic := range parsed.Epics {
+		version := epic.Version()
+		if version == "" || (newest != "" && changelog.Compare(version, newest) <= 0) {
+			continue
+		}
+		if onEpicOrigin(root, EpicBranchName(version)) {
+			newest = version
+		}
+	}
+	return EpicBranchName(newest)
+}
+
+// OpenEpic cuts the plan's epic branch from main when origin lacks it, and opens its draft pull
+// request to main when none is open; an open pull request is left alone.
 func OpenEpic(root string, plan *Plan, client *pr.Client) (*EpicResult, error) {
 	parsed, _, err := LoadBacklog(root)
 	if err != nil {
@@ -52,15 +74,26 @@ func openEpic(root string, parsed backlog.Backlog, plan *Plan, client *pr.Client
 	if !ok {
 		return nil, nil
 	}
-	if onEpicOrigin(root, branch) {
-		return nil, nil
-	}
-	if err := cutEpicBranch(root, branch); err != nil {
-		return nil, err
-	}
 	result := &EpicResult{Branch: branch}
-	if client == nil {
-		return result, nil
+	if onEpicOrigin(root, branch) {
+		if client == nil {
+			return nil, nil
+		}
+		open, err := client.OpenHead(branch, "main")
+		if err != nil {
+			result.Warnings = []string{fmt.Sprintf("could not list %s's pull requests: %v", branch, err)}
+			return result, nil
+		}
+		if open {
+			return nil, nil
+		}
+	} else {
+		if err := cutEpicBranch(root, branch); err != nil {
+			return nil, err
+		}
+		if client == nil {
+			return result, nil
+		}
 	}
 	title := fmt.Sprintf("feat: %s (%s)", epicTitle(epic), plan.Version)
 	url, draft, labels, warnings, err := createEpicPull(client, "main", branch, title, epicGoal(epic))
@@ -84,6 +117,80 @@ func cutEpicBranch(root, branch string) error {
 		return err
 	}
 	return pushRef(context.Background(), root, root, "origin/main", branch)
+}
+
+// ReadyEpic marks the epic pull request at url ready, refusing while its diff adds a backlog file
+// or the changelog names no heading for its version.
+func ReadyEpic(root, version string, client *pr.Client, url string, draft bool) error {
+	if err := epicReadyProblem(root, version, StartRef(root, EpicBranchName(version))); err != nil {
+		return err
+	}
+	return markReady(client, url, draft)
+}
+
+// ReadyEndingEpic marks the epic pull request ready once head, the group about to land on its epic
+// branch, deletes the epic's index file; it refuses as ReadyEpic does, judged at head.
+func ReadyEndingEpic(root string, plan *Plan, client *pr.Client, head string) error {
+	branch := EpicBranchName(plan.Version)
+	if branch == "" || plan.Base != branch || client == nil {
+		return nil
+	}
+	for _, ref := range []string{branch, "main"} {
+		if err := Fetch(root, ref); err != nil {
+			return err
+		}
+	}
+	deleted, err := git.Run(root, "diff", "--name-only", "--diff-filter=D", "origin/"+branch+"..."+head, "--", backlog.GroupFilesDir)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(strings.Fields(deleted), func(file string) bool { return path.Base(file) == backlog.EpicFileName }) {
+		return nil
+	}
+	if err := epicReadyProblem(root, plan.Version, head); err != nil {
+		return err
+	}
+	pull, err := client.View(branch)
+	if err != nil {
+		return err
+	}
+	if pull.State != "OPEN" {
+		return nil
+	}
+	return markReady(client, pull.URL, pull.Draft)
+}
+
+// epicReadyProblem names, in one error, the task files head adds over main and a missing heading
+// for version in head's change log.
+func epicReadyProblem(root, version, head string) error {
+	branch := EpicBranchName(version)
+	base := StartRef(root, "main")
+	added, err := git.Run(root, "diff", "--name-only", "--diff-filter=A", base+"..."+head, "--", backlog.GroupFilesDir)
+	if err != nil {
+		return err
+	}
+	var problems []string
+	if files := strings.Fields(added); len(files) > 0 {
+		problems = append(problems, "its diff adds "+strings.Join(files, ", "))
+	}
+	text, _ := git.Run(root, "show", head+":"+changelog.File)
+	if !namesVersion(text, version) {
+		problems = append(problems, fmt.Sprintf("%s has no heading for %s", changelog.File, version))
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s stays a draft: %s", branch, strings.Join(problems, "; "))
+}
+
+// namesVersion reports whether a changelog holds a heading for exactly version.
+func namesVersion(text, version string) bool {
+	for _, match := range changelog.Heading.FindAllStringSubmatch(text, -1) {
+		if match[1] == version {
+			return true
+		}
+	}
+	return false
 }
 
 // createEpicPull opens head's pull request to base as a draft, or a normal one labelled

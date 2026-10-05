@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/line"
 	"komodo/internal/release"
@@ -20,8 +21,8 @@ func runTag(root string) {
 	}
 }
 
-// tag refuses to run off the branch origin's HEAD names, then tags and pushes the newest unreleased
-// version at HEAD, naming any older unreleased one instead, since HEAD is not where it shipped.
+// tag refuses to run off the branch origin's HEAD names, then tags and pushes every changelog version
+// origin has no tag for, oldest first, each at the commit whose changelog first named it.
 func tag(root string, out io.Writer) error {
 	branch, err := git.Run(root, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -34,26 +35,50 @@ func tag(root string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	pending := release.Unreleased(text, remoteTags(root))
+	pending := release.Taggable(text, remoteTags(root))
 	if len(pending) == 0 {
 		fmt.Fprintln(out, "every changelog version is tagged")
 		return nil
 	}
-	version := pending[len(pending)-1]
-	for _, older := range pending[:len(pending)-1] {
-		fmt.Fprintf(out, "%s: not tagged; it shipped before %s, so tag it by hand at its own commit\n", older, version)
-	}
-	name := release.TagName(version)
-	if !contains(gitLines(root, "tag", "--list"), name) {
-		if _, err := git.Run(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
+	commits := introducedAt(root, pending)
+	local := gitLines(root, "tag", "--list")
+	for _, version := range pending {
+		commit, ok := commits[version]
+		if !ok {
+			return fmt.Errorf("%s: no commit on %s names it in CHANGELOG.md; commit the heading first", version, branch)
+		}
+		name := release.TagName(version)
+		if !contains(local, name) {
+			if _, err := git.Run(root, "tag", "-a", name, "-m", release.TagMessage(version), commit); err != nil {
+				return err
+			}
+		}
+		if _, err := git.Run(root, "push", "origin", name); err != nil {
 			return err
 		}
+		fmt.Fprintln(out, "tagged", name, "at", commit)
 	}
-	if _, err := git.Run(root, "push", "origin", name); err != nil {
-		return err
-	}
-	fmt.Fprintln(out, "tagged", name)
 	return nil
+}
+
+// introducedAt maps each version to the oldest commit in HEAD's history whose CHANGELOG.md names it.
+func introducedAt(root string, versions []string) map[string]string {
+	found := map[string]string{}
+	for _, commit := range gitLines(root, "log", "--reverse", "--format=%H", "HEAD", "--", "CHANGELOG.md") {
+		if len(found) == len(versions) {
+			break
+		}
+		text, err := git.Run(root, "show", commit+":CHANGELOG.md")
+		if err != nil {
+			continue
+		}
+		for _, version := range versions {
+			if _, ok := found[version]; !ok && release.Names(text, version) {
+				found[version] = commit
+			}
+		}
+	}
+	return found
 }
 
 // contains reports whether the slice holds the value.
@@ -88,8 +113,19 @@ func remoteTags(root string) []string {
 
 // runRelease audits the drift between the changelog, tags and groups, builds release assets, or publishes them.
 func runRelease(root string, args []string) {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "build" && args[0] != "publish") {
-		fail(fmt.Errorf("usage: komodo release check | komodo release build | komodo release publish"))
+	if len(args) == 0 || (args[0] != "check" && args[0] != "build" && args[0] != "publish" && args[0] != "notes") {
+		fail(fmt.Errorf("usage: komodo release check | komodo release build | komodo release publish | komodo release notes EPIC-NN"))
+	}
+	if args[0] == "notes" {
+		if len(args) != 2 {
+			fail(fmt.Errorf("usage: komodo release notes EPIC-NN"))
+		}
+		section, err := releaseNotes(root, args[1], time.Now())
+		if err != nil {
+			fail(err)
+		}
+		fmt.Print(section)
+		return
 	}
 	if args[0] == "publish" {
 		url, err := release.Publish(root, filepath.Join(root, "dist"), os.Stdout)
@@ -129,6 +165,35 @@ func runRelease(root string, args []string) {
 	}
 }
 
+// releaseNotes renders the epic's changelog section: its goal's first sentence, then each landed group's title.
+func releaseNotes(root, epicID string, now time.Time) (string, error) {
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		return "", err
+	}
+	epic, ok := parsed.Epic(epicID)
+	if !ok {
+		return "", fmt.Errorf("no epic %s in the backlog", epicID)
+	}
+	if epic.Version() == "" {
+		return "", fmt.Errorf("%s declares no version", epicID)
+	}
+	var titles []string
+	for _, group := range parsed.Groups {
+		if group.EpicID != epicID {
+			continue
+		}
+		landed := len(group.Tasks) > 0
+		for _, task := range group.Tasks {
+			landed = landed && task.Status == "DONE"
+		}
+		if landed {
+			titles = append(titles, strings.TrimSpace(group.Title))
+		}
+	}
+	return changelog.Section(epic.Version(), now.Format("2006-01-02"), changelog.FirstSentence(epic.Goal), titles), nil
+}
+
 // untaggedVersions lists the changelog versions newer than every tag on origin, which are not yet released.
 func untaggedVersions(root string) ([]string, error) {
 	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
@@ -148,27 +213,7 @@ func checkRelease(root string) ([]release.Drift, error) {
 	if err != nil {
 		return nil, err
 	}
-	var versions []string
-	for _, group := range parsed.Groups {
-		if !shipped(group) {
-			continue
-		}
-		versions = append(versions, group.Version())
-	}
-	return release.Check(text, gitLines(root, "tag", "--list"), versions), nil
-}
-
-// shipped reports whether every task in the group is DONE.
-func shipped(group backlog.Group) bool {
-	if len(group.Tasks) == 0 {
-		return false
-	}
-	for _, task := range group.Tasks {
-		if task.Status != "DONE" {
-			return false
-		}
-	}
-	return true
+	return release.Check(text, gitLines(root, "tag", "--list"), release.ShippedVersions(parsed)), nil
 }
 
 // gitLines runs one git command and splits its output into lines.

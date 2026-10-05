@@ -1,4 +1,4 @@
-- [ ] **TSK-15.4.1** The group file cap and the epic group cap read one constant each
+- [x] **TSK-15.4.1** The group file cap and the epic group cap read one constant each
   - files: `internal/backlog/lint.go`, `internal/profile/profile.go`, `internal/profile/profile_test.go`, `internal/line/ship.go`, `internal/line/ship_test.go`
   - accept: profile.PRFiles and PRLinesMax are gone, and checkPRSize with its call in ship.go goes with them
   - accept: backlog.MaxGroupFiles and DefaultGroupsMax are the only caps and the overlay cannot raise them

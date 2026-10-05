@@ -130,6 +130,26 @@ func (c *Client) MergedHead(branch string) (bool, error) {
 	return false, nil
 }
 
+// OpenHead reports whether the forge holds an open pull request from head into base.
+func (c *Client) OpenHead(head, base string) (bool, error) {
+	out, err := c.run("pr", "list", "--head", head, "--base", base, "--state", "open", "--json", "headRefName", "--limit", "1")
+	if err != nil {
+		return false, err
+	}
+	var rows []struct {
+		Head string `json:"headRefName"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if row.Head == head {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Edit changes a pull request's body, title, or draft state.
 func (c *Client) Edit(number string, args ...string) error {
 	_, err := c.run(append([]string{"pr", "edit", number}, args...)...)

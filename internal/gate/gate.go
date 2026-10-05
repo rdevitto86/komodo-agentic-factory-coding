@@ -403,10 +403,15 @@ func BranchProblem(branch string, policy guard.Policy) string {
 	return fmt.Sprintf("branch %q is not <type>/<kebab-name>; rename it, or let the line cut its own", branch)
 }
 
-// PushProblem reports why the pre-push hook refuses the remote ref, empty when it may go: a branch
-// BranchProblem refuses, or one a live builder's lease holds against anyone but its own run.
+// PushProblem reports why the pre-push hook refuses the remote ref, empty when it may go: backlog files
+// added to a critical ref, a branch BranchProblem refuses, or one a live builder's lease holds.
 func PushProblem(dir, ref string, policy guard.Policy, now time.Time) string {
 	branch := strings.TrimPrefix(ref, "refs/heads/")
+	if policy.IsCritical(branch) {
+		if added := pushedBacklog(dir, branch); len(added) > 0 {
+			return fmt.Sprintf("push to %s adds %s; backlog files reach only an epic branch", branch, strings.Join(added, ", "))
+		}
+	}
 	if problem := BranchProblem(branch, policy); problem != "" {
 		return problem
 	}
@@ -414,6 +419,24 @@ func PushProblem(dir, ref string, policy guard.Policy, now time.Time) string {
 		return "push to " + held.Refusal()
 	}
 	return ""
+}
+
+// pushedBacklog lists the task-file paths the local branch adds over origin's copy of it, against the
+// empty tree when origin has none.
+func pushedBacklog(dir, branch string) []string {
+	to := "refs/heads/" + branch
+	if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", to); err != nil {
+		to = "HEAD"
+	}
+	from := "refs/remotes/origin/" + branch
+	if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", from); err != nil {
+		from = emptyTreeOID
+	}
+	out, err := git.Run(dir, "diff", "--name-only", "--diff-filter=A", from, to, "--", backlog.GroupFilesDir)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(out)
 }
 
 // hunkHeader captures a unified diff hunk's new-file start line, from a header such as "@@ -1,2 +3,4 @@".

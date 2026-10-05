@@ -5,7 +5,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
+
+func TestPRBaseDefaultsToTheNewestOpenEpicBranch(t *testing.T) {
+	root, _ := tagRepo(t, "main", "## 1.0.0\n")
+	runGit(t, root, "push", "origin", "main")
+	if got := prBase(root, ""); got != "main" {
+		t.Fatalf("base = %q, want the default branch with no open epic", got)
+	}
+	for _, epic := range []backlog.EpicFile{
+		{ID: "EPIC-02", Title: "Two", Status: "READY", Version: "2.0.0", GroupsMax: 6},
+		{ID: "EPIC-03", Title: "Three", Status: "READY", Version: "3.0.0", GroupsMax: 6},
+	} {
+		if _, err := backlog.WriteEpic(root, epic); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "push", "origin", "main:refs/heads/feat/2.0.0")
+	if got := prBase(root, ""); got != "feat/2.0.0" {
+		t.Fatalf("base = %q, want the only epic branch origin holds", got)
+	}
+	runGit(t, root, "push", "origin", "main:refs/heads/feat/3.0.0")
+	if got := prBase(root, ""); got != "feat/3.0.0" {
+		t.Fatalf("base = %q, want the newest open epic's branch", got)
+	}
+	if got := prBase(root, "main"); got != "main" {
+		t.Fatalf("base = %q, want an explicit --base kept", got)
+	}
+}
 
 func TestCheckPRTitleFollowsTheTemplate(t *testing.T) {
 	good := []string{

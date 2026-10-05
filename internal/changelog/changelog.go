@@ -2,6 +2,7 @@
 package changelog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,8 +25,8 @@ func Read(root string) (string, error) {
 // SemVer matches x.y.z with an optional prerelease such as -alpha.1.
 const SemVer = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
 
-// Heading matches a whole version heading line; its first group is the version.
-var Heading = regexp.MustCompile(`(?m)^##\s+\[?v?(` + SemVer + `)\]?.*$`)
+// Heading matches a whole version heading line, an "Unreleased —" prefix allowed; its first group is the version.
+var Heading = regexp.MustCompile(`(?m)^##\s+(?:Unreleased\s+—\s+)?\[?v?(` + SemVer + `)\]?.*$`)
 
 // versionHeading is the heading pattern this package reads.
 var versionHeading = Heading
@@ -36,15 +37,63 @@ var validVersion = regexp.MustCompile(`^v?` + SemVer + `$`)
 // Valid reports whether version is a whole semantic version; Compare sorts anything else first.
 func Valid(version string) bool { return validVersion.MatchString(version) }
 
-// Latest is the highest version text names, or the empty string when it names none.
+// unreleasedHeading matches a heading for the version in progress, which no installer or tag can point at yet.
+var unreleasedHeading = regexp.MustCompile(`^##\s+Unreleased\s`)
+
+// InProgress reports whether a heading line names the version still marked Unreleased.
+func InProgress(heading string) bool { return unreleasedHeading.MatchString(heading) }
+
+// Latest is the highest released version text names, or the empty string when it names none.
 func Latest(text string) string {
 	latest := ""
 	for _, match := range versionHeading.FindAllStringSubmatch(text, -1) {
+		if unreleasedHeading.MatchString(match[0]) {
+			continue
+		}
 		if latest == "" || Compare(match[1], latest) > 0 {
 			latest = match[1]
 		}
 	}
 	return latest
+}
+
+// Section renders one version's changelog section: its dated heading, the summary, then a bullet per item.
+func Section(version, date, summary string, items []string) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "## %s — %s\n\n", version, date)
+	if summary != "" {
+		out.WriteString(summary + "\n\n")
+	}
+	for _, item := range items {
+		out.WriteString("- " + item + "\n")
+	}
+	return out.String()
+}
+
+// FirstSentence is text up to and including its first full stop, or the whole text trimmed.
+func FirstSentence(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if end := strings.Index(text, ". "); end >= 0 {
+		return text[:end+1]
+	}
+	return text
+}
+
+// Insert puts section above text's first version heading, or at its end with none; a version already
+// named leaves text unchanged.
+func Insert(text, version, section string) string {
+	for _, match := range versionHeading.FindAllStringSubmatch(text, -1) {
+		if match[1] == version {
+			return text
+		}
+	}
+	if loc := versionHeading.FindStringIndex(text); loc != nil {
+		return text[:loc[0]] + section + "\n" + text[loc[0]:]
+	}
+	if text != "" && !strings.HasSuffix(text, "\n\n") {
+		text = strings.TrimRight(text, "\n") + "\n\n"
+	}
+	return text + section
 }
 
 // Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release,

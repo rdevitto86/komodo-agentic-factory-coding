@@ -60,6 +60,38 @@ func TestCreatePassesBaseHeadAndDraft(t *testing.T) {
 	}
 }
 
+func TestOpenHeadReportsAnOpenPullFromHeadIntoBase(t *testing.T) {
+	cases := []struct {
+		name string
+		out  string
+		err  error
+		want bool
+		bad  bool
+	}{
+		{"open", `[{"headRefName":"feat/2.0.0"}]`, nil, true, false},
+		{"none", `[]`, nil, false, false},
+		{"other head", `[{"headRefName":"feat/1.0.0"}]`, nil, false, false},
+		{"forge error", "", errors.New("not logged in"), false, true},
+		{"bad json", "{", nil, false, true},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			var call string
+			client := &Client{Run: func(_ string, args ...string) (string, error) {
+				call = strings.Join(args, " ")
+				return item.out, item.err
+			}}
+			got, err := client.OpenHead("feat/2.0.0", "main")
+			if (err != nil) != item.bad || got != item.want {
+				t.Fatalf("open = %v, err = %v", got, err)
+			}
+			if !strings.Contains(call, "pr list --head feat/2.0.0 --base main --state open") {
+				t.Fatalf("call = %q", call)
+			}
+		})
+	}
+}
+
 func TestViewParsesTheFieldsTheLineReads(t *testing.T) {
 	client, _ := fake(t, `{"number":7,"url":"u","state":"OPEN","title":"T","isDraft":true}`)
 	pull, err := client.View("7")

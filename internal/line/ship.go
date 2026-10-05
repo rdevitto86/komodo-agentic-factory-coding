@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
@@ -240,10 +241,7 @@ func ShipGroupContext(
 	}
 	tip := diffTip(root, plan.Branch)
 	lines = ChangedLines(group, StartRef(group, plan.Base), tip)
-	files, added := ReviewSize(group, StartRef(group, plan.Base), tip)
-	if err := checkPRSize(plan.Group, files, added, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
-		return nil, err
-	}
+	_, added := ReviewSize(group, StartRef(group, plan.Base), tip)
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
@@ -305,6 +303,9 @@ func ShipGroupContext(
 		return result, nil
 	}
 	result.Labels, result.Draft, result.Ready = kept, false, true
+	if err := ReadyEndingEpic(root, plan, client, tip); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("the epic pull request stays a draft: %v", err))
+	}
 	return result, nil
 }
 
@@ -472,6 +473,11 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(ended) > 0 && filepath.Base(ended[0]) == backlog.EpicFileName {
+		if err := insertEpicSection(group, plan.Group, time.Now()); err != nil {
+			return nil, err
+		}
+	}
 	if err := removeEnded(ended); err != nil {
 		return nil, err
 	}
@@ -526,6 +532,35 @@ func endedEpicFiles(worktree, groupID string) ([]string, error) {
 		ended = append(ended, group.Paths()...)
 	}
 	return ended, nil
+}
+
+// insertEpicSection puts the ending epic's section, its goal and every group's title, into the worktree's
+// existing CHANGELOG.md when no heading names its version.
+func insertEpicSection(worktree, groupID string, now time.Time) error {
+	tree, err := backlog.LoadTree(worktree)
+	if err != nil {
+		return err
+	}
+	own, ok := tree.Group(groupID)
+	if !ok || own.Epic.Version == "" {
+		return nil
+	}
+	text, err := changelog.Read(worktree)
+	if err != nil || text == "" {
+		return err
+	}
+	var titles []string
+	for _, group := range tree.Groups {
+		if group.EpicDir == own.EpicDir {
+			titles = append(titles, strings.TrimSpace(group.File.Title))
+		}
+	}
+	section := changelog.Section(own.Epic.Version, now.Format("2006-01-02"), changelog.FirstSentence(own.Epic.Goal), titles)
+	updated := changelog.Insert(text, own.Epic.Version, section)
+	if updated == text {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(worktree, changelog.File), []byte(updated), 0o644)
 }
 
 // removeEnded deletes the ended backlog files, then every folder they leave empty.
@@ -1023,23 +1058,6 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 // bookkeeping reports a path Ship writes itself: a backlog file.
 func bookkeeping(path string) bool {
 	return strings.HasPrefix(path, "docs/backlog/")
-}
-
-// checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
-// A zero ceiling is unset and never refuses.
-func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
-	var over []string
-	if filesCap > 0 && files > filesCap {
-		over = append(over, fmt.Sprintf("%d file(s) (cap %d)", files, filesCap))
-	}
-	if linesMax > 0 && lines > linesMax {
-		over = append(over, fmt.Sprintf("%d added line(s) (cap %d)", lines, linesMax))
-	}
-	if len(over) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
-		group, strings.Join(over, " and "))
 }
 
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.

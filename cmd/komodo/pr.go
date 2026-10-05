@@ -53,7 +53,7 @@ func runPRCreate(root string, args []string) {
 	title := set.String("title", "", "<type>: <summary>, at most 72 characters")
 	body := set.String("body", "", "the pull request body")
 	bodyFile := set.String("body-file", "", "a file holding the pull request body")
-	base := set.String("base", "", "the branch to merge into, the remote's default when empty")
+	base := set.String("base", "", "the branch to merge into, the open epic branch or else the remote's default when empty")
 	draft := set.Bool("draft", false, "open the pull request as a draft")
 	var extra labelFlags
 	set.Var(&extra, "label", "a further label, such as breaking; repeatable")
@@ -72,10 +72,7 @@ func runPRCreate(root string, args []string) {
 	if head == "" {
 		fail(errors.New("HEAD tracks no branch; check out one, or cut a detached worktree with komodo worktree add"))
 	}
-	target := *base
-	if target == "" {
-		target = line.DefaultBase(root)
-	}
+	target := prBase(root, *base)
 	if head == target {
 		fail(fmt.Errorf("check out the branch to open a pull request from; HEAD is %s", head))
 	}
@@ -89,6 +86,17 @@ func runPRCreate(root string, args []string) {
 	}
 	fmt.Println(url)
 	labelPull(root, client, url, target, extra)
+}
+
+// prBase is the explicit base, else the open epic branch on origin, else the remote's default branch.
+func prBase(root, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if branch := line.OpenEpicBranch(root); branch != "" {
+		return branch
+	}
+	return line.DefaultBase(root)
 }
 
 // runPRLabel applies the labels the current branch's open pull request earns.
