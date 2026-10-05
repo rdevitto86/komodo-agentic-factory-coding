@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"komodo/internal/conductor"
+	"komodo/internal/gate"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 )
 
 // stateOpen names a recorded run whose group has no state.json, so no conductor has driven it yet.
@@ -84,9 +90,57 @@ func StatusText(groups []GroupStatus) string {
 	return out.String()
 }
 
-// addStatus is the status hook: it adds the run's status and any blocked groups to a session as it starts.
+// StaleCheck names each file of a host's installed global layer whose bytes differ from what checkout's toolkit renders.
+type StaleCheck func(checkout string) []string
+
+// staleChecks are the registered hosts' global-layer checks, by mount name, under staleLock.
+var (
+	staleLock   sync.Mutex
+	staleChecks = map[string]StaleCheck{}
+)
+
+// RegisterStaleCheck records how one mount finds the stale files of its installed global layer.
+func RegisterStaleCheck(host string, check StaleCheck) {
+	staleLock.Lock()
+	defer staleLock.Unlock()
+	staleChecks[host] = check
+}
+
+// binaryBuild reads a binary's version and commit; tests swap it.
+var binaryBuild = mount.BinaryBuild
+
+// Stale names what the machine layer holds that differs from checkout: the installed binary, when its commit is not
+// the toolkit build's stamp, then each registered host's stale global files.
+func Stale(checkout string) []string {
+	var stale []string
+	if stamp, err := os.ReadFile(filepath.Join(checkout, "bin", gate.BuiltFrom)); err == nil {
+		if installed, err := mount.HookPath(); err == nil {
+			_, commit := binaryBuild(installed)
+			if commit == "" || !strings.HasPrefix(strings.TrimSpace(string(stamp)), commit) {
+				stale = append(stale, "the installed binary "+installed)
+			}
+		}
+	}
+	staleLock.Lock()
+	checks := maps.Clone(staleChecks)
+	staleLock.Unlock()
+	for _, host := range slices.Sorted(maps.Keys(checks)) {
+		stale = append(stale, checks[host](checkout)...)
+	}
+	return stale
+}
+
+// StaleText is the one line naming everything stale, or empty when nothing is.
+func StaleText(stale []string) string {
+	if len(stale) == 0 {
+		return ""
+	}
+	return "stale: " + strings.Join(stale, ", ") + "; run komodo sync\n"
+}
+
+// addStatus is the status hook: it adds the run's status, blocked groups, and a stale machine layer to a session.
 func addStatus(_ context.Context, in Input) (Outcome, error) {
-	text := StatusText(RunStatus(in.Root))
+	text := StatusText(RunStatus(in.Root)) + StaleText(Stale(mount.MainCheckout(in.Root)))
 	if text == "" {
 		return Outcome{Verdict: Allow}, nil
 	}

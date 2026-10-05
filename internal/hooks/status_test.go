@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +131,73 @@ func TestTheStatusHookInformsOnlyWhenARunIsRecorded(t *testing.T) {
 				t.Fatalf("message %q; only an inform carries one", out.Message)
 			}
 		})
+	}
+}
+
+// staleMachine stamps a toolkit build under a fresh checkout, makes the installed binary report commit, and
+// registers one host check that names files; every swap is undone when the test ends.
+func staleMachine(t *testing.T, commit string, files ...string) string {
+	t.Helper()
+	checkout := clockRoot(t)
+	if err := os.MkdirAll(filepath.Join(checkout, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "bin", ".built-from"), []byte("0123456789abcdef\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := binaryBuild
+	binaryBuild = func(string) (string, string) { return "1.0.0-beta.6", commit }
+	RegisterStaleCheck("stale-test", func(string) []string { return files })
+	t.Cleanup(func() {
+		binaryBuild = previous
+		staleLock.Lock()
+		delete(staleChecks, "stale-test")
+		staleLock.Unlock()
+	})
+	return checkout
+}
+
+func TestStaleNamesTheBinaryAndEachGlobalFileOnOneLine(t *testing.T) {
+	cases := []struct {
+		name   string
+		commit string
+		files  []string
+		want   string
+	}{
+		{"fresh", "0123456789ab", nil, ""},
+		{"a stale global skill", "0123456789ab", []string{"skills/run/SKILL.md"},
+			"stale: skills/run/SKILL.md; run komodo sync\n"},
+		{"a binary from another commit", "fedcba987654", nil, "the installed binary"},
+		{"a dev build", "unknown", []string{"AGENTS.md"}, "the installed binary"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			text := StaleText(Stale(staleMachine(t, tc.commit, tc.files...)))
+			if tc.want == "" {
+				if text != "" {
+					t.Fatalf("text = %q, want nothing when fresh", text)
+				}
+				return
+			}
+			if !strings.Contains(text, tc.want) || strings.Count(text, "\n") != 1 || !strings.HasPrefix(text, "stale: ") ||
+				!strings.HasSuffix(text, "; run komodo sync\n") {
+				t.Fatalf("text = %q, want one stale line holding %q", text, tc.want)
+			}
+			for _, file := range tc.files {
+				if !strings.Contains(text, file) {
+					t.Fatalf("text = %q, want %s named", text, file)
+				}
+			}
+		})
+	}
+}
+
+func TestTheStatusHookInformsWhenTheMachineLayerIsStale(t *testing.T) {
+	root := staleMachine(t, "0123456789ab", "skills/plan/SKILL.md")
+	out, err := addStatus(context.Background(), Input{Root: root})
+	if err != nil || out.Verdict != Inform || strings.Count(out.Message, "stale: ") != 1 ||
+		!strings.Contains(out.Message, "skills/plan/SKILL.md") {
+		t.Fatalf("addStatus = %+v, %v; want one stale line naming the skill", out, err)
 	}
 }
 

@@ -15,8 +15,13 @@ import (
 func clockRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	// Its own .git stops the worktree walk here; a sandbox's temp dir sits inside the real worktree.
-	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+	// Its own .git stops the worktree walk here, and git's too; a sandbox's temp dir sits inside the real worktree.
+	for _, dir := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(root, ".git", dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root

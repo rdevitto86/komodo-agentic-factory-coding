@@ -123,6 +123,7 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 		Base:    plan.Base,
 		Branch:  plan.Branch,
 		Started: started,
+		Binary:  runningBinary(),
 	}
 	state.Worktree = path
 	state.Waves = plan.Waves

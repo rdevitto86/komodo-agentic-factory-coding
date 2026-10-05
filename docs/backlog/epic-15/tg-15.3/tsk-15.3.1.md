@@ -1,4 +1,4 @@
-- [ ] **TSK-15.3.1** Publish refuses to overwrite a newer installed binary
+- [x] **TSK-15.3.1** Publish refuses to overwrite a newer installed binary
   - files: `internal/mount/hookbin.go`, `internal/mount/hookbin_test.go`
   - accept: Publish reads the installed binary's version through its own `version` output and the candidate's build stamp
   - accept: a candidate older by changelog order is refused with one line naming both versions

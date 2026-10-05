@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,11 +13,7 @@ import (
 // sweepRepo is a git repo whose state dir holds the sweep's log and lock.
 func sweepRepo(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, out)
-	}
-	root, err := filepath.EvalSymlinks(root)
+	root, err := filepath.EvalSymlinks(clockRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +43,7 @@ func TestThePruneHookLaunchesTheSweepAtTheMainCheckoutAndAllows(t *testing.T) {
 	root := sweepRepo(t)
 	var launched []string
 	old := launch
-	launch = func(at string) error { launched = append(launched, at); return nil }
+	launch = func(at string, _ bool) error { launched = append(launched, at); return nil }
 	t.Cleanup(func() { launch = old })
 
 	out, err := startSweep(context.Background(), Input{Root: root})
@@ -64,24 +59,106 @@ func TestThePruneHookLaunchesTheSweepAtTheMainCheckoutAndAllows(t *testing.T) {
 	}
 }
 
-func TestThePruneHookLeavesARepoWithoutKomodoStateAlone(t *testing.T) {
-	root := sweepRepo(t)
-	if err := os.Remove(filepath.Join(root, ".komodo")); err != nil {
+// bareRepo is a repo with its own minimal .git and no .komodo, under a HOME of its own.
+func bareRepo(t *testing.T) (root, home string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(clockRoot(t))
+	if err != nil {
 		t.Fatal(err)
 	}
+	home = t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return root, home
+}
+
+func TestThePruneHookLaunchesTheSweepInARepoWithoutKomodoState(t *testing.T) {
+	root, home := bareRepo(t)
+	var launched []string
+	old := launch
+	launch = func(at string, _ bool) error { launched = append(launched, at); return nil }
+	t.Cleanup(func() { launch = old })
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".komodo", sweepLog), []byte("failed: boom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := startSweep(context.Background(), Input{Root: root})
+	if err != nil || out.Verdict != Inform || !strings.Contains(out.Message, "failed: boom") {
+		t.Fatalf("startSweep = %+v, %v; want the machine sweep's last failure named", out, err)
+	}
+	if len(launched) != 1 || launched[0] != root {
+		t.Fatalf("launched = %v, want one sweep at %s", launched, root)
+	}
+}
+
+func TestAMachineSweepWithNoHomeDoesNothing(t *testing.T) {
+	root, _ := bareRepo(t)
+	t.Setenv("HOME", "")
+	t.Setenv(sweepMachineEnv, "1")
 	launched := false
 	old := launch
-	launch = func(string) error { launched = true; return nil }
+	launch = func(string, bool) error { launched = true; return nil }
 	t.Cleanup(func() { launch = old })
 	if out, err := startSweep(context.Background(), Input{Root: root}); err != nil || out.Verdict != Allow || launched {
-		t.Fatalf("startSweep = %+v, %v, launched = %v; want a repo komodo never set up left alone", out, err, launched)
+		t.Fatalf("startSweep = %+v, %v, launched = %v; want a silent allow with no home to log in", out, err, launched)
+	}
+	refreshed := false
+	oldRefresh := Refresh
+	Refresh = func(string) ([]string, error) { refreshed = true; return nil, nil }
+	t.Cleanup(func() { Refresh = oldRefresh })
+	Sweep(root)
+	if refreshed {
+		t.Fatal("a machine sweep with no home refreshed anyway")
+	}
+}
+
+func TestSweepWithoutKomodoStateRefreshesTheMachineAndSkipsThePrune(t *testing.T) {
+	root, home := bareRepo(t)
+	t.Setenv(sweepMachineEnv, "1")
+	pruned := false
+	swapPrune(t, func() ([]string, error) { pruned = true; return nil, nil })
+	old := Refresh
+	var refreshedAt string
+	var refreshedHeld []os.DirEntry
+	Refresh = func(at string) ([]string, error) {
+		refreshedAt = at
+		refreshedHeld, _ = os.ReadDir(at)
+		return []string{"binary /home/.komodo/bin/komodo"}, nil
+	}
+	t.Cleanup(func() { Refresh = old })
+	for _, rel := range []string{"bin/komodo", "komodo/AGENTS.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte("the repo's own"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Sweep(root)
+	if refreshedAt == "" || refreshedAt == root || len(refreshedHeld) != 0 {
+		t.Fatalf("refresh ran at %q holding %v; want an empty root, never the repo's bin or komodo tree", refreshedAt, refreshedHeld)
+	}
+	if _, err := os.Stat(refreshedAt); !os.IsNotExist(err) {
+		t.Fatalf("the empty refresh root %s survived the sweep: %v", refreshedAt, err)
+	}
+	if pruned {
+		t.Fatal("a repo with no .komodo was pruned")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo")); !os.IsNotExist(err) {
+		t.Fatalf("the sweep made .komodo in a repo komodo never set up: %v", err)
+	}
+	log, err := os.ReadFile(filepath.Join(home, ".komodo", sweepLog))
+	if err != nil || !strings.HasPrefix(string(log), "swept at ") || !strings.Contains(string(log), "binary /home/.komodo/bin/komodo") {
+		t.Fatalf("log = %q, %v; want the refresh recorded under ~/.komodo", log, err)
 	}
 }
 
 func TestThePruneHookNamesTheLastSweepsFailure(t *testing.T) {
 	root := sweepRepo(t)
 	old := launch
-	launch = func(string) error { return nil }
+	launch = func(string, bool) error { return nil }
 	t.Cleanup(func() { launch = old })
 	if err := os.WriteFile(filepath.Join(root, ".komodo", sweepLog), []byte("failed: boom\nmore\n"), 0o644); err != nil {
 		t.Fatal(err)

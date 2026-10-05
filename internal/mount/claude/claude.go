@@ -2,18 +2,22 @@
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"komodo/internal/detect"
 	"komodo/internal/facet"
 	"komodo/internal/glob"
+	"komodo/internal/hooks"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
@@ -161,14 +165,20 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 		}
 		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
 	}
+	rules, err := mount.Rules(root)
+	if err != nil {
+		return plan, err
+	}
+	plan.Add(filepath.Join(home, Dir, globalRules), []byte(rules), "the universal rules every session loads")
+	removeV1Render(&plan, home)
 	// A marked skill absent from this render's list is removed; an unmarked one, such as the user's own, stays.
 	markerPath := filepath.Join(home, Dir, globalSkillsMarker)
 	for _, name := range readGlobalSkillsMarker(markerPath) {
-		if !slices.Contains(orchestratorSkills, name) {
+		if !slices.Contains(orchestratorSkills, name) && name != globalRules {
 			plan.AddRemoval(filepath.Join(dir, name, "SKILL.md"), "an orchestrator skill this render drops")
 		}
 	}
-	plan.Add(markerPath, []byte(strings.Join(orchestratorSkills, "\n")+"\n"), "the record of which skills this render wrote")
+	plan.Add(markerPath, globalMarker(), "the record of which skills this render wrote")
 
 	if !filepath.IsAbs(binary) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
@@ -182,10 +192,163 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	return plan, nil
 }
 
+// globalRules names the rules file the global render writes beside the user's CLAUDE.md, which imports it.
+const globalRules = "AGENTS.md"
+
+// globalMarker is the marker body a global render writes: each orchestrator skill, then the rules file.
+func globalMarker() []byte {
+	return []byte(strings.Join(append(slices.Clone(orchestratorSkills), globalRules), "\n") + "\n")
+}
+
+// staleGlobal names each file of the installed global layer whose bytes differ from what root's toolkit renders;
+// a home with no marker has no global layer and names nothing.
+func staleGlobal(root string) []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	markerPath := filepath.Join(home, Dir, globalSkillsMarker)
+	marker, err := os.ReadFile(markerPath)
+	if err != nil {
+		return nil
+	}
+	var stale []string
+	if !bytes.Equal(marker, globalMarker()) {
+		stale = append(stale, markerPath)
+	}
+	if skills, err := mount.LoadSkills(root); err == nil {
+		byName := map[string]string{}
+		for _, skill := range skills {
+			byName[skill.Name] = skill.Body
+		}
+		for _, name := range orchestratorSkills {
+			path := filepath.Join(home, Dir, "skills", name, "SKILL.md")
+			if data, err := os.ReadFile(path); err != nil || string(data) != byName[name] {
+				stale = append(stale, path)
+			}
+		}
+	}
+	if rules, err := mount.Rules(root); err == nil {
+		path := filepath.Join(home, Dir, globalRules)
+		if data, err := os.ReadFile(path); err != nil || string(data) != rules {
+			stale = append(stale, path)
+		}
+	}
+	if path := filepath.Join(home, Dir, "settings.json"); staleGlobalHooks(path) {
+		stale = append(stale, path)
+	}
+	return stale
+}
+
+// staleGlobalHooks reports whether the settings at path run any komodo hook other than the guard, status and
+// prune hooks on the fixed binary.
+func staleGlobalHooks(path string) bool {
+	binary, err := mount.HookPath()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(data, &settings) != nil {
+		return true
+	}
+	got := map[string][]string{}
+	for event, groups := range settings.Hooks {
+		for _, group := range groups {
+			for _, hook := range group.Hooks {
+				if install.KomodoHook(hook.Command) {
+					got[event] = append(got[event], hook.Command)
+				}
+			}
+		}
+	}
+	want := map[string][]string{
+		"PreToolUse": {binary + " guard"},
+		"SessionStart": {
+			fmt.Sprintf("%s hook %s --host claude", binary, statusHook),
+			fmt.Sprintf("%s hook %s --host claude", binary, pruneHook),
+		},
+	}
+	return !maps.EqualFunc(got, want, slices.Equal[[]string])
+}
+
+// v1Marker opens the marker the first line's install wrote into ~/.claude and each folder it copied whole.
+const v1Marker = "rendered by komodo install"
+
+// v1Folders are the folders under ~/.claude the first line's install copied whole, each holding its marker.
+var v1Folders = []string{"skills", "agents", "standards"}
+
+// removeV1Render plans removing each entry in a V1-marked folder, then the marker, or the whole folder when
+// every entry goes; an orchestrator skill, or an entry changed after the marker was written, stays.
+func removeV1Render(plan *install.Plan, home string) {
+	for _, folder := range v1Folders {
+		dir := filepath.Join(home, Dir, folder)
+		markerPath := filepath.Join(dir, globalSkillsMarker)
+		data, err := os.ReadFile(markerPath)
+		if err != nil || !strings.HasPrefix(string(data), v1Marker) {
+			continue
+		}
+		info, err := os.Stat(markerPath)
+		if err != nil {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		var stale []string
+		kept := folder == "skills"
+		for _, entry := range entries {
+			path := filepath.Join(dir, entry.Name())
+			switch {
+			case entry.Name() == globalSkillsMarker:
+			case folder == "skills" && slices.Contains(orchestratorSkills, entry.Name()),
+				changedSince(path, info.ModTime()):
+				kept = true
+			default:
+				stale = append(stale, path)
+			}
+		}
+		if !kept {
+			plan.AddRemoval(dir, "a folder the first line's install rendered")
+			continue
+		}
+		for _, path := range stale {
+			plan.AddRemoval(path, "a file the first line's install rendered")
+		}
+		plan.AddRemoval(markerPath, "the first line's install marker")
+	}
+}
+
+// changedSince reports whether path, or anything under it, was modified after since.
+func changedSince(path string, since time.Time) bool {
+	changed := false
+	_ = filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info, err := entry.Info(); err == nil && info.ModTime().After(since) {
+			changed = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return changed
+}
+
 // readGlobalSkillsMarker returns the skill names an earlier global render wrote, or none.
 func readGlobalSkillsMarker(path string) []string {
 	data, err := os.ReadFile(path)
-	if err != nil {
+	if err != nil || strings.HasPrefix(string(data), v1Marker) {
 		return nil
 	}
 	return strings.Fields(string(data))
@@ -498,6 +661,7 @@ func init() {
 		FuzzTargets: []mount.FuzzTarget{{Name: "FuzzGlobalSettings", Package: "./internal/mount/claude"}},
 	})
 	install.RegisterGlobal("claude", RenderGlobal)
+	hooks.RegisterStaleCheck("claude", staleGlobal)
 }
 
 // retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.

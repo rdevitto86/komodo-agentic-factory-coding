@@ -36,8 +36,11 @@ var prune = doctor.Prune
 // Refresh publishes the newest binary and re-renders stale layers before the prune; nil skips it.
 var Refresh func(root string) ([]string, error)
 
+// sweepMachineEnv marks a launched sweep for a repo with no state dir: it refreshes the machine and prunes nothing.
+const sweepMachineEnv = "KOMODO_SWEEP_MACHINE"
+
 // launch starts the sweep as its own process group at root and returns without waiting; tests swap it.
-var launch = func(root string) error {
+var launch = func(root string, machine bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -45,6 +48,9 @@ var launch = func(root string) error {
 	cmd := exec.Command(exe, "hook", "prune")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), SweepEnv+"=1")
+	if machine {
+		cmd.Env = append(cmd.Env, sweepMachineEnv+"=1")
+	}
 	proc.Group(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
@@ -52,23 +58,44 @@ var launch = func(root string) error {
 	return cmd.Process.Release()
 }
 
-// startSweep is the prune hook: in a komodo repo, it launches the background sweep and names the last one's failure.
+// sweepDir is where a sweep keeps its log and lock: ~/.komodo for a machine-only sweep, else root's state dir.
+func sweepDir(root string, machine bool) string {
+	if !machine {
+		return filepath.Join(root, line.StateDir)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, line.StateDir)
+}
+
+// startSweep is the prune hook: it launches the background sweep and names the last one's failure.
 func startSweep(_ context.Context, in Input) (Outcome, error) {
 	root := mount.MainCheckout(in.Root)
 	out := Outcome{Verdict: Allow}
-	if info, err := os.Stat(filepath.Join(root, line.StateDir)); err != nil || !info.IsDir() {
+	info, err := os.Stat(filepath.Join(root, line.StateDir))
+	machine := err != nil || !info.IsDir()
+	dir := sweepDir(root, machine)
+	if dir == "" {
 		return out, nil
 	}
-	if data, err := os.ReadFile(filepath.Join(root, line.StateDir, sweepLog)); err == nil && strings.HasPrefix(string(data), sweepFailed) {
+	path := filepath.Join(dir, sweepLog)
+	if data, err := os.ReadFile(path); err == nil && strings.HasPrefix(string(data), sweepFailed) {
 		first, _, _ := strings.Cut(string(data), "\n")
-		out = Outcome{Verdict: Inform, Message: "The last background worktree sweep " + first + "; see .komodo/" + sweepLog + "."}
+		out = Outcome{Verdict: Inform, Message: "The last background worktree sweep " + first + "; see " + path + "."}
 	}
-	return out, launch(root)
+	return out, launch(root, machine)
 }
 
-// Sweep runs one capped prune at root under the lock, logging what it did; a held lock skips it.
+// Sweep refreshes the machine and, unless launched machine-only, prunes root, capped and under the lock; a held
+// lock skips it.
 func Sweep(root string) {
-	dir := filepath.Join(root, line.StateDir)
+	repo := os.Getenv(sweepMachineEnv) != "1"
+	dir := sweepDir(root, !repo)
+	if dir == "" {
+		return
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
@@ -82,16 +109,30 @@ func Sweep(root string) {
 		defer os.Remove(lock)
 		var refreshed []string
 		if Refresh != nil {
+			at := root
+			if !repo {
+				// An empty root mounts no host and holds no bin or toolkit, so only the machine layer refreshes.
+				empty, err := os.MkdirTemp("", "komodo-sweep-")
+				if err != nil {
+					result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
+					return
+				}
+				defer os.RemoveAll(empty)
+				at = empty
+			}
 			var err error
-			if refreshed, err = Refresh(root); err != nil {
+			if refreshed, err = Refresh(at); err != nil {
 				result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
 				return
 			}
 		}
-		done, err := work(root, line.DefaultBase(root), true)
-		if err != nil {
-			result <- sweepFailed + " " + err.Error() + "\n"
-			return
+		var done []string
+		if repo {
+			var err error
+			if done, err = work(root, line.DefaultBase(root), true); err != nil {
+				result <- sweepFailed + " " + err.Error() + "\n"
+				return
+			}
 		}
 		lines := append(refreshed, done...)
 		result <- "swept at " + time.Now().Format(time.RFC3339) + "\n" + strings.Join(lines, "\n") + "\n"

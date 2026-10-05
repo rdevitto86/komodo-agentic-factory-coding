@@ -808,3 +808,30 @@ func TestStartNamesAndDatesARunFromOneClockReading(t *testing.T) {
 		t.Fatalf("run = %s started %s, want %s started %s", state.Run, state.Started, want, fixed)
 	}
 }
+
+// TestARunKeepsTheBinaryItWasCutWith records the cutting binary in run.json, then proves a rebuild mid-run
+// changes neither run.json nor what the run's next ledger entry carries.
+func TestARunKeepsTheBinaryItWasCutWith(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	saved := runningBinary
+	t.Cleanup(func() { runningBinary = saved })
+	runningBinary = func() string { return "1.0.0-beta.6 (0123456789ab)" }
+	if _, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	runningBinary = func() string { return "1.0.0-beta.7 (fedcba987654)" }
+	state, err := LoadRunFor(root, "TG-15.1")
+	if err != nil || state.Binary != "1.0.0-beta.6 (0123456789ab)" {
+		t.Fatalf("run.json binary = %q, %v; want the cutting binary", state.Binary, err)
+	}
+	Stamp(root, ledger.Entry{Group: "TG-15.1", Station: "build"})
+	entries, err := Book(root).Read(ledger.RunFile)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("entries = %+v, %v", entries, err)
+	}
+	for _, entry := range entries {
+		if entry.Binary != state.Binary {
+			t.Fatalf("%s entry binary = %q, want %q", entry.Station, entry.Binary, state.Binary)
+		}
+	}
+}

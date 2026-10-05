@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 )
 
@@ -26,6 +27,8 @@ func ScriptProblems(root string) []string {
 	if err != nil {
 		return nil
 	}
+	text, _ := changelog.Read(root)
+	latest := changelog.Latest(text)
 	var problems []string
 	for _, rel := range strings.Fields(files) {
 		data, err := os.ReadFile(filepath.Join(root, rel))
@@ -45,6 +48,11 @@ func ScriptProblems(root string) []string {
 				problems = append(problems, fmt.Sprintf("%s: %d commands; a script is one exec into komodo", rel, len(commands)))
 			}
 			continue
+		}
+		if latest != "" {
+			if problem := defaultVersionProblem(rel, string(data), latest); problem != "" {
+				problems = append(problems, problem)
+			}
 		}
 		if lines := strings.Count(strings.TrimSpace(string(data)), "\n") + 1; lines > installerLines {
 			problems = append(problems, fmt.Sprintf("%s: %d lines; an installer is at most %d", rel, lines, installerLines))

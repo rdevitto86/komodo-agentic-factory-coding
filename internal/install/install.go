@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"komodo/internal/changelog"
 	"komodo/internal/fsx"
 	"komodo/internal/git"
 )
@@ -113,6 +114,21 @@ func (p *Plan) AddIgnore(entry, why string) {
 		return
 	}
 	p.Add(path, body, why)
+}
+
+// installerDefault matches the KOMODO_VERSION fallback in install.sh's ${…:-v…} or install.ps1's else { 'v…' }.
+var installerDefault = regexp.MustCompile(`(?:KOMODO_VERSION:-|else \{ ')(v` + changelog.SemVer + `)`)
+
+// defaultVersionProblem names an installer whose default KOMODO_VERSION is not v plus latest, or "" when it matches.
+func defaultVersionProblem(rel, body, latest string) string {
+	match := installerDefault.FindStringSubmatch(body)
+	if match == nil {
+		return fmt.Sprintf("%s: names no default KOMODO_VERSION; want v%s, the newest changelog version", rel, latest)
+	}
+	if match[1] != "v"+latest {
+		return fmt.Sprintf("%s: defaults KOMODO_VERSION to %s; want v%s, the newest changelog version", rel, match[1], latest)
+	}
+	return ""
 }
 
 // hookCommand matches a JSON "command" string that runs some binary's guard subcommand.
