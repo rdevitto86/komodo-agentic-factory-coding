@@ -1,7 +1,0 @@
-- [ ] **TSK-15.6.5** Sync reconciles a group a person landed by hand
-  - files: `internal/run/sync.go`, `internal/run/sync_test.go`, `internal/doctor/prune.go`, `internal/doctor/prune_test.go`
-  - accept: when every task of a Blocked or escalated group is ticked on origin's epic branch, sync marks its run Shipped and merged and closes its worktree and tip
-  - accept: sync and prune test a group worktree's tip against origin's epic branch, not the default branch, so a group landed in its epic reads merged before the epic lands
-  - done_when: `go test ./internal/run/...`, `go test ./internal/doctor/...`
-  - context: `today: the TG-11.27 run stayed Blocked in state.json after a person landed it as #330; nothing reconciles with the forge; openCleanup only runs for an ended epic`, `the signal is the group's task files all ticked on origin/feat/<version>, read with git show as endedEpics does`, `today: staleWorktrees (internal/run/sync.go:172) and settleShippedRun (internal/doctor/prune.go:238) check ancestry against origin/<default>; TG-15.3 merged as #335 into feat/1.0.0-beta.6 and sync printed "has not merged, not removed"`, `prune also skipped it because komodo.pushed held the sha the line pushed, not the revert a person pushed from the root; the forge's merged PR is the stronger signal`
-  - priority: H

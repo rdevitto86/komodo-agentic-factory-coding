@@ -1,6 +1,0 @@
-- [ ] **TSK-15.7.9** Repair rounds on the headless path are capped by the profile
-  - files: `internal/conductor/drive.go`, `internal/conductor/drive_test.go`
-  - accept: a group whose repairs reach Profile.Repairs after checks, or ReviewRepairs after review, escalates with reason `repairs`
-  - done_when: `go test ./internal/conductor/...`
-  - context: `today: Profile.Repairs 1 and ReviewRepairs 2 are read only by komodo step (internal/line/snapshot.go:190, step.go:195); the headless drive stops only on the stall rule (errNoProgress), so repairs that keep changing files never stop`, `docs/lld.md#pacing-limits-and-loop-detection`
-  - priority: H

@@ -1,23 +1,22 @@
-# komodo-agentic-factory-coding
+# komodo-agentic-harness-coding
 
-Komodo's code assembly line: one static binary is the conveyor and devices, markdown is all a model reads, one guard is the only hook, a model is a machine mounted per host. `docs/prd.md` is the requirements, proven by command; `docs/backlog/` is the work.
+Komodo 1.0.0-beta.6 is being planned. `PLAN.md` is the plan and the only source for design facts.
 
-## Rules that hold here
+## Output rules (every session, non-negotiable)
 
-- **Nothing outside `internal/mount/` names a host.** No vendor, tool, path, or flag anywhere else.
-- **Models read markdown, never Go.** Rules, roles, skills, and policy are the only files a machine sees.
-- **Each hook has one job,** one stage and a refusal limit.
-- **The gate is local.** `komodo gate` runs pre-commit and pre-push, no model; nothing runs on GitHub.
-- **No MCP in 1.0.** MCPs land in a later hot-swap pass.
-- **No repo config is required;** the gate refuses only on no build check (decision 0006).
-- **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
-- **A pull request opens with `komodo pr create`,** its body following `.github/PULL_REQUEST_TEMPLATE.md`.
-- **The prototype is history,** at tag `prototype-final`; nothing returns without a task.
+Output that has to be re-read has failed, however correct.
 
-## Commands
+- **Line one is the verdict.** No narration after code, no pleasantries.
+- **At most two prose sections.** The cap is on the report, never the work; never stop mid-task to ask to continue.
+- **One open question per turn.** Ask the blocking one, hold the rest.
+- **Concrete numbers,** "3 files", never "a bit". Define any term the user was not given.
+- **Bluntness is never hostility.** Concede fast; disagree once, flatly, then do it their way. No moralising or unrequested cautions.
 
-```bash
-go run ./cmd/komodo gate     # the whole precheck
-go run ./cmd/komodo lint     # after a backlog edit
-go run ./cmd/komodo doctor   # drift and portability
-```
+## Planning rules
+
+- **`PLAN.md` wins.** Read the section before answering; never rely on memory or on `backups/`.
+- **`backups/` is the prototype.** It is reference only, not a source of rules.
+- **Vet lines have defaults.** State the default you assume, keep going, and ask only when the answer is the user's alone.
+- **Plan edits are patches.** Change the smallest span, and add a row to "Review changes" when a design decision moves.
+- **Keep counts and cross-references true.** Update the S-ID, phase and section references you touch.
+- **Open items live in `PLAN.md`.** Add a new one there; do not hold it in chat.

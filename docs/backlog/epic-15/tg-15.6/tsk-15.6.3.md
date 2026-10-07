@@ -1,9 +1,0 @@
-- [ ] **TSK-15.6.3** After a timeout the orchestrator's answer or retry is acted on in the same run
-  - files: `internal/conductor/escalate.go`, `internal/conductor/escalate_test.go`
-  - accept: timeout() returns the orchestrator's action instead of the cause
-  - accept: an `answer` resumes the builder under a fresh group deadline
-  - accept: a `retry` runs once on the heavy tier
-  - accept: `stop` blocks
-  - done_when: `go test ./internal/conductor/...`
-  - context: `today: timeout() (internal/conductor/escalate.go:111-128) runs the orchestrator on context.Background then returns cause, so an answer or retry is discarded and the run exits 1`, `a fresh deadline for the answered builder is the remaining group budget after TSK-15.6.4`
-  - priority: C

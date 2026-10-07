@@ -1,0 +1,1640 @@
+# Komodo 1.0.0-beta.6: standalone, model-agnostic Go harness
+
+## Status
+
+**Design approved for drafting, organized by subsystem.** S01–S11 were approved, with their Vet items settled on 2026-10-06. Design reviews the same day changed S01, S02, S03, S04, S05, S07, S08 and S10 after approval, so those need a second look; see **Review changes (2026-10-06)**. Phase 1 turns this plan into prd, hld, lld, ADR 0001 and epic-1. Each subsystem (S01–S27) becomes one or more task groups; S28 waits for a later minor.
+
+## How to read this plan
+
+- **Part A:** context, foundation and the subsystem map.
+- **Part B:** one card per subsystem, covering what it owns and does, its values and interfaces, what to vet, and the proof.
+- **Part C:** the agent roster, folder layout, port map, build waves and end-to-end verification.
+- **Vet lines** are the nuanced decisions to confirm. Each one already has a default, so nothing is blocked.
+
+---
+
+# Part A: Context and map
+
+## Context
+
+**Why.** In the prototype, Claude Code acts as the engine, and Komodo spends its effort fighting hooks, settings, plugins and render drift:
+- **TG-15.4:** 11 fix commits.
+- **TG-15.3:** stale renders and stale binaries.
+- **The guard:** it fails open, and it refused 187 of the builder's own commands.
+- **Retries:** effectively unbounded.
+- **The USD cap:** always $0.
+
+Every prior alpha and beta, including the first beta 6 attempt, is a failed prototype. The concepts carry forward; the code starts fresh in place, with the prototype parked in `backups/`.
+
+**What.**
+- **The engine:** one Go binary, standard library only.
+- **The models:** stateless workers, one fresh session per task, each with a private toolset.
+- **Two callers, one interface:** an orchestrator and a human at a shell call the same CLI verbs. The orchestrator is Claude Code first, any agent host with a shell next, and Komodo's own `komodo chat` (S28) later.
+
+**Locked decisions:**
+- **Repo and bridge:** rewrite in place. Claude Code talks to the harness through CLI subcommands with `--json`; there is no server process.
+- **Isolation and tools:** worktree plus guard, with no Docker dependency. Each session gets a private MCP tool server, and native tools are off.
+- **Execution:** one fresh session per task; repair resumes it. Providers use a declared fallback chain per agent, and the pipeline has 6 stages.
+- **Platforms and config:** macOS, Linux, native Windows `.exe` and WSL2. There is no repo config folder; repo settings live in a per-repo section of `~/.komodo/config.json`, and runtime state lives outside the tree.
+- **Carry-over:** the backlog tree and lint, release, worktree protections, the subagent ledger, the economy flag and all 34 `standards-*` skills are kept. Eval, recall, plugins and standalone facets are deleted.
+- **Docs:** `AGENTS.md` is the source of truth, and `CLAUDE.md` imports it. Specs start from zero: the PRD is rewritten, and prior specs sit in `backups/` and at tag `prototype-final`.
+- **OpenAI:** scoped now, implemented in a later minor version. Beta 6 ships the interfaces, the `install` probe, Codex detection and `AGENTS.md` compatibility. `codex-cli` and `openai-api` refuse with `not yet`, and `.codex/` install reports `not yet`. `openai.go` still ships for `http:` endpoints, local or on a server.
+
+## 1. Foundation
+
+```
+ Claude Code (orchestrator per repo)      Human at a shell
+            │  komodo <verb> --json              │
+            └──────────────┬─────────────────────┘
+                           ▼
+  ┌──────────────── komodo (Go, stdlib only) ────────────────┐
+  │ S01 CLI ─► S14 engine (stages) ◄─ S17 scheduler (tick)   │
+  │   S15 workspace · S16 supervisor · S18 recovery          │
+  │   S19 check · S20 review · S26 ship                      │
+  │ S11 brief ◄─ S09 skills · S10 rules · S07 agents         │
+  │ S08 tools ─► S12 guard ─► S13 sandbox                    │
+  │ S21 resources · S22 cache · S23 ledger · S24 events      │
+  └───────┬──────────────────┬───────────────────┬───────────┘
+   S05 claude -p (Max)  codex exec (later)  S06 HTTP: Anthropic API,
+   + private MCP        + private MCP       OpenAI-compatible, local
+     tool server          tool server       (harness-owned tool loop)
+```
+
+- **80% mechanical, 20% prompt.** If a guard row, parser or check can prevent a failure, Go prevents it.
+- **The engine orchestrates.** The orchestrator is only the control plane: it refines intent, calls `plan`/`run`/`status`/`wait`, and reports back.
+- **One tool registry, two transports.** The API loop calls the Go tools directly. CLI providers reach them through `komodo internal tools --agent <a> --session <id>`.
+- **Every result is schema-checked twice.** The provider enforces the schema first, then Go re-validates it. A failure gets one re-prompt; a second failure fails the task.
+
+## 2. Subsystem map
+
+| ID | Subsystem | Layer | Package | Depends on |
+|---|---|---|---|---|
+| S01 | CLI processor | Interface | `cli` | every subsystem (thin calls) |
+| S02 | Installer | Interface | `host` | S04, S03 |
+| S03 | Binary lifecycle (`fresh`) | Interface | `host`, `core` | S06 |
+| S04 | Configuration | Interface | `core`, `repo` | — |
+| S05 | Provider adapters | Model I/O | `provider` | S06, S07, S08 |
+| S06 | HTTP stack | Model I/O | `core` | — |
+| S07 | Agent registry | Model I/O | `agent` | S04 |
+| S08 | Tool runtime | Model I/O | `tools`, `provider` | S12, S13, S22 |
+| S09 | Skill loader | Context | `agent` | S22 |
+| S10 | Rules and output contract | Context | `agent` | — |
+| S11 | Context and brief builder | Context | `agent` | S07, S09, S10, S22 |
+| S12 | Guardrails | Safety | `guard` | S04 |
+| S13 | Sandbox and process control | Safety | `core` | — |
+| S14 | Orchestration engine | Orchestration | `engine` | S05, S11, S15, S16 |
+| S15 | Workspace and leases | Orchestration | `engine` | S13 |
+| S16 | Session supervisor | Orchestration | `engine` | S05, S13, S23 |
+| S17 | Scheduler and job templates | Orchestration | `engine` | S14, S18 |
+| S18 | Error recovery | Orchestration | `engine` | S16, S23 |
+| S19 | Check (ground truth) | Quality | `engine` | S13, S22 |
+| S20 | Review and evidence | Quality | `engine` | S11, S16, S22 |
+| S21 | Token and resource management | Economy and ops | `engine`, `agent` | S23 |
+| S22 | Cache store | Economy and ops | `core` | — |
+| S23 | Runtime observability | Economy and ops | `engine`, `cli` | — |
+| S24 | Event bus and hooks | Economy and ops | `engine` | S13 |
+| S25 | Backlog and planning | Delivery | `repo` | S07, S10 |
+| S26 | Ship: git, PR, release | Delivery | `engine`, `repo` | S10, S12 |
+| S27 | Gate and self-checks | Delivery | `repo`, `guard` | all |
+
+**Concepts → subsystems:**
+
+| Concept | Lives in |
+|---|---|
+| **Agents** | S07: `agent.json` for mechanics, `prompt.md` for what the model reads |
+| **Skills** | S09: an indexed loader, preinjected or pulled on demand, usable by external sessions |
+| **Rules** | S10: embedded in the binary and first in every prompt; the output style is config (S04) |
+| **Hooks** | S24: Go lifecycle events, plus an optional repo `hooks.json` |
+| **Guards** | S12: checked in-process on every tool call, fail-closed |
+| **Commands** | S04 detects the command classes; S08 runs them; only S26 runs git writes |
+| **Plugins** | Deleted. External MCPs become an opt-in allowlist per agent in S08 |
+
+---
+
+# Part B: Subsystem cards
+
+## Interface layer
+
+### S01 · CLI processor
+
+**Owns:** `cmd/komodo/main.go`, `internal/cli/*`.
+
+**Does:**
+- **One ingress, three tiers:** every caller uses the same binary. Verbs are tagged human, orchestrator or internal, and the terminal check enforces the tag.
+- **Self-describing:** `komodo help --json` returns every verb, flag, type, default and result schema. `help orch` lists the orchestrator tier.
+- **One envelope:** `{ok, verdict, report, data, error{code, reason, fix}}` with `--json`. `report` is the human text, already formatted to `output.profile`, so a caller can relay it verbatim.
+- **Exit codes:** 0 ok, 1 refused, 2 usage, 3 blocked, 4 internal.
+- **Pin check first:** a repo pinned above this binary refuses every verb except `help`, `version`, `fresh`, `install` and `doctor` (S03).
+
+**Tiers:**
+
+| Tier | Prefix | Who calls it | Shown in `help` | Output |
+|---|---|---|---|---|
+| Human | `komodo <verb>` | you; the orchestrator only for verbs marked "shared" | yes | text, or `--json` |
+| Orchestrator | `komodo orch <verb>` | Claude Code (later Codex); rarely you | only in `help orch` | always the JSON envelope, never interactive |
+| Internal | `komodo internal <verb>` | the engine; never typed | only in `help --all` | protocol-specific |
+
+**Tier enforcement (a guardrail, not a wall):**
+- **Terminal check (every host):** a human-only verb refuses with exit 1 unless it has a controlling terminal. Agent shells have none: Claude Code's Bash tool can't open `/dev/tty` (tested 2026-10-06).
+- **No host hooks:** every host gets the same `AGENTS.md` rules (O1–O7, O9) and the same verbs. A shell can fake a terminal; rule O7 forbids it, but nothing enforces it.
+
+**Global flags (every verb):**
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--json` | print only the envelope | off (always on under `orch`) |
+| `-C, --repo <path>` | act on that repo | cwd |
+| `--input <file\|->` | take the verb's arguments as one JSON object | — |
+| `-q, --quiet` / `-v, --verbose` | less or more human text | — |
+| `--no-color` | plain text; `NO_COLOR` also works | auto |
+| `-h, --help` | same as `help <verb>` | — |
+
+Every verb that writes also takes `--dry-run`, which prints each write and makes none.
+
+**Human tier (approve or deny each row):**
+
+| Verb | Does | Flags | Shared |
+|---|---|---|---|
+| `help [verb]` | list verbs, or one verb's flags and examples | `--all` | yes |
+| `version` | version, binary path, latest known, repo pin | `--check` | yes |
+| `install` | binary, provider probe and repo files (S02) | `--repo-only`, `--machine-only`, `--claude`, `--no-claude`, `--codex`, `--no-codex`, `--no-path`, `--from <file>`, `--offline`, `--project`, `--schedule`, `--force` | no |
+| `uninstall` | remove every file the manifest owns | `--repo-only`, `--machine-only` | no |
+| `fresh` | get the newest binary now (S03) | `--check`, `--to <version>`, `--restart-runs` | no |
+| `doctor [install\|config\|backlog]` | health of the install, the config, or the backlog; all 3 by default | `--fix` (refused for the orchestrator) | yes |
+| `config show\|get\|set\|unset` | effective settings and where each came from (S04) | `--repo` (this repo's section), `--explain` | `show`, `get` only |
+| `sync` | after a merge: fetch, prune worktrees, refresh repo files | `--no-fetch` | yes |
+| `add backlog` | add a task, group or epic (S25) | `--task <text>`, `--group <title>`, `--epic <title>`, `--to <id>`, `--files <globs>`, `--done-when <text>` | yes |
+| `add changelog` | add an `Unreleased` entry | `--entry <text>`, `--kind added\|changed\|fixed\|removed` | yes |
+| `run [group]` | drive groups through the stages in the foreground | `--mode economy\|thorough`, `--stage <stage>`, `--set <key>=<value>` | no (orch uses `start`) |
+| `status [run]` | lanes, stages, budgets, blocks | `--watch`, `--session <id>`, `--backlog`, `--metrics`, `--all` | yes |
+| `resume <run>` | continue a crashed, blocked, paused or restarted run; paused agents restart now | `--from <stage>`, `--reload-config` | yes |
+| `abandon <run>` | stop, free leases, keep evidence | `--reason <text>`, `--keep-worktree` | yes |
+| `jobs list\|show\|run\|pause\|resume\|tick` | job templates and the tick (S17) | `<id>`; `run --ignore-window` | `list`, `show`, `tick` only |
+| `cache stats\|clear` | size, hit rate, purge (S22) | `--kind skills\|context\|checks\|review` | `stats` only |
+| `gate` | full self-check; Komodo repo only (S27) | `--only <check>`, `--fast`, `--install` (dev build), `--install-hooks` | yes, except `--install` and `--install-hooks` |
+| `release <version>` | tag, cross-build, checksum, sign; Komodo repo only (S26) | `--notes-file <path>` | no |
+
+**Orchestrator tier (`komodo orch <verb>`):**
+
+| Verb | Does | Flags |
+|---|---|---|
+| `orch plan <goal>` | planner drafts groups; writes only if the backlog check passes | `--from <spec>`, `--epic <N>` |
+| `orch start [group]` | start a run detached; return its id at once | `--mode`, `--stage`, `--set <key>=<value>` |
+| `orch wait <run>` | block until the next wake event; run it in the background, since Claude Code's Bash tool stops at 2 min by default and 10 at most | `--timeout <dur>` (9m), `--for blocked\|done\|any` |
+| `orch agent <name>` | one agent on one task, under harness limits | `--task <file>` (required), `--provider <link>`, `--model <id>` |
+| `orch skill list\|get` | skill index and bodies (S09) | `list --agent <name>`, `get <name> --section <heading>` |
+| `orch pr open\|threads` | open the epic PR into its base; list open review threads | `open --base <ref> --title <text> --body-file <path> --ready`; `threads <pr> --unresolved` |
+| `orch scope approve\|deny <group>` | answer a builder's `needs_scope`; approve adds the paths to the group's `files` (S19) | `--paths <list>`, `--reason <text>` |
+
+**Internal tier (`komodo internal <verb>`):**
+
+| Verb | Called by | Does |
+|---|---|---|
+| `internal tools` | the engine, for `claude -p` | private MCP server for one session (S08); `--agent`, `--session` |
+| `internal fresh-bg` | any verb, only when a newer version is known | the detached updater: download, verify, swap (S03) |
+
+**Run flags, trimmed from 6 to 3:**
+- **Kept:**
+  - `--mode`: the economy flag.
+  - `--stage`: runs one stage, replacing `/build`, `/review` and `/ship`.
+  - `--set`: overrides any config key for this run, within hard limits. From the orch tier it refuses `providers.*`, `sandbox.*` and `http.*`, and any value that raises a limit.
+- **Moved to config:** `--max-parallel` becomes `limits.lanes`, and `--budget-tokens` becomes `limits.group_tokens`.
+- **Moved elsewhere:** `--detach` became `orch start`, and `--until` was dropped.
+
+**`orch agent` purpose:** ad hoc delegation outside the pipeline. For example, a scout on a local model answers "where is X used?" for free. It replaces Claude Code's native `Agent` tool for that job, with harness limits and a ledger row instead.
+
+**Prototype verbs not carried:**
+- **Renamed or folded in, part 1:**
+  - `init` and `setup` → `install`
+  - `update` → `fresh`
+  - `lint` → `doctor backlog`
+  - `detect` → `config show`
+  - `check` and `ship` → `run --stage`
+- **Renamed or folded in, part 2:**
+  - `list`, `backlog` and `metrics` → `status` flags
+  - `pr`, `threads` → `orch pr`
+  - `git-hook` → `gate --install-hooks`
+  - `worktree` → engine-internal
+- **Deleted:** `migrate`, `ingest`, `comments`, `diff`, `tag`, `rephase`, `recall`, `eval`.
+
+**Vet:**
+- **Tier split:** approve human, orchestrator and internal, with the terminal check enforcing it?
+- **`orch agent`:** keep it for ad hoc delegation? Default: yes.
+- **`--set` on runs:** may it override any key, within hard limits? Default: yes.
+- **`--input` JSON:** does every verb accept its arguments as one JSON object? Default: yes.
+- **Exit codes:** are the 5 codes enough for a caller to branch on?
+
+**Proof:** each verb has a golden `--json` test. An unknown flag exits 2 and names the closest match. The gate fails if `help --json` and these tables disagree. With no controlling terminal, `komodo install` exits 1. `orch start --set providers.paid=allowed` is refused.
+
+### S02 · Installer (`komodo install`)
+
+**Owns:** `host/install.go`, `host/claude.go`, `host/codex.go`, `host/probe.go`, `templates/`, `install.sh`, `install.ps1`.
+
+**Does:** one verb puts Komodo on the machine and into the current repo. It replaces the prototype's `setup`; rerunning it is how you re-probe. It works offline and gives the same result on all 3 OSes.
+
+**Steps, in order:**
+
+| # | Target | Writes | When |
+|---|---|---|---|
+| 1 | Binary | `~/.komodo/versions/<v>/komodo`, then copies it to `~/.komodo/bin/komodo` (S03) | always, whatever version is installed |
+| 2 | PATH | that bin directory on the user PATH | if missing; `--no-path` skips |
+| 3 | Provider probe | `~/.komodo/state/providers.json` | always; local checks only, under 2 s |
+| 4 | `AGENTS.md` | the full template, or only the `komodo:begin … komodo:end` block | inside a git repo |
+| 5 | `CLAUDE.md` | the `@AGENTS.md` import line | `--claude`, or Claude detected |
+| 6 | `.claude/settings.json` | 2 entries only: the `Bash(komodo *)` allow rule and a `SessionStart` hook that runs `komodo status`. Merged into an existing file; other keys are never touched. | `--claude`, or Claude detected |
+| 7 | Manifest | `<git-common-dir>/komodo/install.json`, one hash per owned file or entry | inside a git repo |
+| 8 | OS schedule | a launchd, cron or Task Scheduler entry that runs `komodo jobs tick` (S17) | `--schedule` only |
+
+No config file is written. `~/.komodo/config.json` appears only on your first `config set` (S04).
+
+**The Komodo block in `AGENTS.md` (step 4).** Install owns this text, so every session in the repo reads it before any skill loads. It is how a session finds `orch`:
+
+```markdown
+<!-- komodo:begin min=1.0.0-beta.6 -->
+## Komodo harness
+
+- **You are the orchestrator.** Drive Komodo only through `komodo orch <verb>`; every reply is the JSON envelope.
+- **Find your verbs:** run `komodo help orch --json` first. It lists every orch verb, flag and result schema.
+- **Your verbs:** `orch plan`, `orch start`, `orch wait`, `orch agent`, `orch skill`, `orch pr open|threads`, `orch scope`, plus the shared `status`, `add`, `resume`, `abandon`, `sync`, `doctor`, `gate` and `jobs tick`. Run `orch wait` in the background.
+- **Not yours:** `install`, `fresh`, `config set`, `run`, `gate --install` and `release` belong to the person. They refuse without a terminal. Hand the person the command.
+- **Start:** run `komodo status` first: version, live runs, blocked groups.
+- **Skills:** `komodo orch skill get run|plan|respond|komodo` returns the workflow for each job.
+- **Rules:** <O1–O7 and O9, from `embed/rules/orchestrator.md` (S10)>
+- **Report:** relay the envelope's `report` field verbatim; it is already in the output contract.
+
+<output style for output.profile, from embed/output/adhd.md (S10)>
+<!-- komodo:end -->
+```
+
+**Two more pointers to `orch`:**
+- **`help`:** plain `komodo help` ends with `Orchestrator verbs: komodo help orch`.
+- **`status`:** its report ends with `Orchestrator verbs: komodo help orch`.
+- **`SessionStart` (Claude only):** the step 6 hook runs `komodo status`, so a new session sees it on line one. A failing hook prints an error and blocks nothing.
+
+**Provider probe (step 3):**
+
+| Link | Check |
+|---|---|
+| `claude-cli` | its absolute path, its version, and `claude auth status --json` (login method and plan) |
+| `anthropic-api` | the key reference in `providers.keys.anthropic` resolves |
+| `codex-cli` | `codex` on PATH and its version; usable in the later minor |
+| `openai-api` | the key reference in `providers.keys.openai` resolves; usable in the later minor |
+| `http:<name>` | each endpoint's `GET /models` answers within 1 s and lists its models |
+
+**Binary source (step 1), newest first:**
+- **`--from <file>`:** that file, with no network.
+- **Online:** the latest release, if it is newer than the running binary. It is verified as in S03.
+- **Otherwise:** a copy of the running binary.
+
+**Detection:**
+- **Claude:** any one of `CLAUDE.md` or `.claude/` in the repo, `claude` on PATH, or `~/.claude/`.
+- **Codex:** any one of `.codex/` in the repo, `codex` on PATH, or `~/.codex/`.
+- **Both:** Codex already reads `AGENTS.md`, so step 4 serves it in beta 6.
+
+**Repo rules:**
+- **Hand edits survive:** an owned file whose hash differs from the manifest is left alone and reported. `--force` overwrites it.
+- **Idempotent:** a rerun makes 0 repo changes, and stale owned files are pruned.
+- **Pin only rises:** `min=` becomes the higher of the existing pin and this binary's version.
+- **Never created:** a repo config folder, git hooks, `.codex/`, `~/.claude` or `~/.codex`. In `.claude/`, only the 2 entries of step 6: no skills, rules or guard hook. `AGENTS.md` stays the source of truth. `--project` adds `docs/{prd,hld,lld}.md`, `CHANGELOG.md` and a PR template.
+
+**Bootstrap (no Komodo yet):**
+- **macOS, Linux, WSL:** `curl -fsSL <repo>/install.sh | sh`.
+- **Windows:** `irm <repo>/install.ps1 | iex`.
+- **Both:** download the latest binary, check its SHA-256 against `latest.json`, then run `komodo install --machine-only`.
+
+**Vet:**
+- **Downgrade on install:** an offline install from an older binary points `bin/` at the older version, per your rule. S03 moves it forward on the next online check. OK?
+- **PATH edit:** Windows sets the user PATH. macOS and Linux symlink into `~/.local/bin` if it is on PATH, else append one line to `~/.zshrc` or `~/.bashrc`. Default: yes.
+- **Detection by machine:** does `claude` or `codex` on PATH alone count as detected? Default: yes.
+- **Bootstrap check:** the scripts verify only SHA-256 over HTTPS, and the binary verifies ed25519 on every later fresh. OK?
+
+**Proof:**
+- **Fresh repos on macOS and Windows:** a new `claude` session reads the `AGENTS.md` block, `orch skill list` shows the 4 orchestrator skills, and `komodo` resolves in a new shell. `.claude/settings.json` holds only the allow rule and the `SessionStart` hook, and a pre-existing key survives.
+- **Rerun:** 0 repo changes, and a hand-edited `CLAUDE.md` survives.
+- **Probe:** with `claude` removed from PATH, `providers.json` marks `claude-cli` unavailable with the reason.
+
+### S03 · Binary lifecycle (`komodo fresh`)
+
+**Owns:** `host/fresh.go`, `core/version.go`, `cli/internal.go` (`fresh-bg`), the PATH check in `host/doctor.go`.
+
+**Goal:** every new `komodo` call runs the newest release, with no prompt, no added latency and no model involved.
+
+**No model, ever:** the updater is plain Go code in the same binary, run by `komodo` verbs. No host hook is involved.
+
+**Layout:**
+
+```
+~/.komodo/
+├── bin/komodo                    # a copy of the current version; PATH and hooks point here
+├── versions/1.0.0-beta.6/komodo  # every installed version, kept whole
+├── versions/1.0.0-beta.7/komodo
+└── state/{fresh.json, fresh.lock, fresh.log, active/}
+```
+
+**How a swap happens (Claude Code's pattern: download in the background, use on the next call):**
+
+| Step | What | When |
+|---|---|---|
+| 1 | **Check:** fetch the ~1 KB `latest.json` in-process with a 1 s timeout, and record `latest` in `state/fresh.json`. Only `status`, the engine at run start, and `fresh --check` do this; short verbs never touch the network. | at most once an hour |
+| 2 | **Spawn only if newer:** any verb compares `latest` in `state/fresh.json` with its own version. Only if `latest` is newer does it spawn `internal fresh-bg` detached, and then it carries on. | a local file read, no network |
+| 2b | `fresh-bg` downloads to `versions/<v>/komodo.part`, verifies SHA-256 and ed25519, and renames it into place. | seconds, in the background |
+| 3 | It atomically replaces `bin/komodo` with the new version. Windows renames the running `.exe` to `.old` first. | immediately; it never waits for runs |
+| 4 | Every new call now gets the new binary, including the orchestrator's next `komodo orch …` call. | the hot swap |
+| 5 | Live runs keep their own version. The engine starts every child from `versions/<its v>/komodo`, never from `bin/`. | until each run ends |
+| 6 | Cleanup deletes versions that are neither current, previous, nor used by a live run in `state/active/`. | on every fresh |
+
+**Why runs never block a swap:** each run is pinned to a version directory that is never touched while it is in use. With 3 parallel sessions, new calls switch at once, and old runs finish on the version they started on.
+
+**Forcing everyone onto the new version (`fresh --restart-runs`):**
+- **Signal:** each live run gets a stop signal and checkpoints at the next safe point, between tool calls.
+- **Resume:** each run exits with reason `restart`, and `fresh` resumes it on the new binary.
+- **Bound:** a run that has not checkpointed in 2 min stays on its old version and is reported. It is never killed mid-write.
+- **Cost:** a model turn that was in flight may repeat once.
+
+**Version skew:**
+- **State compatibility:** a new binary reads state written by the previous schema version.
+- **Older than that:** `status` says "run is on beta.6; let it finish or use `fresh --restart-runs`".
+
+| Concern | Design |
+|---|---|
+| Source | `github.com/rdevitto86/komodo-agentic-factory-coding/releases/latest/download/latest.json`. The repo is public, and a release download is not a REST API call, so the 60-per-hour limit does not apply. |
+| Manifest | version, a URL and SHA-256 per OS and arch, and an ed25519 signature. The current and next public keys are embedded. |
+| One updater | `state/fresh.lock`, created exclusively, stale after 10 min. |
+| Direction | background fresh never downgrades. `fresh --to <v>` and `install` may. A dev build (`+dev.<commit>`) is replaced only by a strictly newer release. |
+| Failure | silent and logged to `state/fresh.log`. After 3 failures in a row, `status` and `doctor` say so. |
+| Off switch | `fresh.auto: false`, `KOMODO_FRESH=off`, or `CI=true`. |
+
+**Repo pin stays:** `<!-- komodo:begin min=1.0.0-beta.6 -->` in `AGENTS.md` covers offline machines and `fresh.auto: false`. Below it, verbs refuse with `run komodo fresh`.
+
+**Vet:**
+- **Hot swap:** approve versioned directories with runs pinned to their own version?
+- **Check points:** check only at session start, run start and `fresh --check`, at most hourly? A machine with neither for days stays on its version until one happens.
+- **`--restart-runs`:** approve a 2-minute checkpoint window, accepting that one in-flight model turn may repeat?
+- **GitHub prerelease flag:** `releases/latest` skips prereleases, so betas publish as normal releases with "beta" in the version. OK?
+- **Signing key:** default is `~/.komodo/release.key` (mode 0600), with releases cut only from your machine. Needed by phase 8.
+
+**Proof:**
+- **Hot swap:** a fresh during a fixture run makes the next `komodo version` report the new version, and the run finishes on the old one.
+- **Restart:** `--restart-runs` resumes the fixture run on the new version with 0 repeated tool calls.
+- **Refusals:** a bad checksum or signature keeps the old binary, and a pinned repo refuses verbs.
+- **Latency and locking:** a short verb never makes a network call, the updater never spawns when `latest` is not newer, and 2 concurrent verbs spawn 1 updater.
+
+### S04 · Configuration
+
+**Owns:** `core/config.go`, `repo/detect.go`, `cli/config.go`, `embed/defaults.json`, `embed/policy.json`.
+
+**Answers one question:** for any setting, what is the value now, and which layer set it?
+
+**No repo config folder.** Each repo has a section in your machine config, plus `--set` on a run for one-off values. The only Komodo file in a repo is the block in `AGENTS.md`.
+
+**Layers, lowest first:**
+
+| # | Layer | Where | Power |
+|---|---|---|---|
+| 1 | Built-in | `embed/defaults.json`, `embed/policy.json`, inside the signed binary | defaults and hard limits |
+| 2 | Machine | `~/.komodo/config.json`, top level | any value within the hard limits |
+| 3 | Repo section | `~/.komodo/config.json` under `repos.<repo-id>` | the same |
+| 4 | Run | `--mode` and `--set` | the same, for one run; the orch tier can't loosen `providers.*`, `sandbox.*`, `http.*` or any limit (S01) |
+
+- **Merge:** a higher layer wins, within the built-in hard limits. Deny lists are the exception: they only add (the union of all layers).
+- **Repo id:** the normalized origin URL, such as `github.com/rdevitto86/komodo-agentic-factory-coding`. With no remote, the path of the git common dir. Every worktree of a repo shares one id.
+- **Agents can't touch it:** `~/.komodo/**` is protected by G3, and the orch tier's `--set` can't loosen a limit, so no session can change its own limits.
+- **Snapshot per run:** the effective config's hash goes into `runs/<group>/state.json`. Edits mid-run do nothing; `resume --reload-config` re-reads.
+- **Strict decode:** an unknown key is an error naming the closest match. A value over a hard limit is refused, naming the key, the value and the limit.
+
+**Multi-repo on one binary:** each call resolves its repo from cwd or `-C`. It then uses that repo's section and that repo's state under `<git-common-dir>/komodo/`. Shared across repos: the binary, the top-level config, the Max quota and `limits.machine_lanes`.
+
+**All config keys (38):**
+
+| Key | Default | Hard limit | Meaning |
+|---|---|---|---|
+| `output.profile` | `adhd` | — | the template set for everything you read (S10): `adhd` or `standard`; facts and codes are the same under both |
+| `output.turn_end_summary` | `true` | — | the 4 headings at the end of reports |
+| `output.color` | `auto` | — | `auto`, `on`, `off` |
+| `mode` | `thorough` | — | `economy` or `thorough` |
+| `fresh.auto` | `true` | — | background fresh |
+| `fresh.interval` | `1h` | ≥ 10m | how often to check |
+| `providers.chains.<agent>` | per agent (S05) | — | the fallback order |
+| `providers.paid` | `never` | — | `never`, `fallback` or `allowed`: when a paid link may run (S05) |
+| `warn.usd_per_run` | 5 | — | warn when a run's metered USD passes this; never stops work |
+| `warn.quota_pct` | 90 | — | warn when a provider window (Max 5-hour, weekly) passes this % |
+| `providers.keys.anthropic` | `env:ANTHROPIC_API_KEY` | `env:` only | the key reference, never the value |
+| `providers.keys.openai` | `env:OPENAI_API_KEY` | `env:` only | the same |
+| `providers.endpoints.<name>` | `local` at `http://localhost:11434/v1` | — | OpenAI-compatible servers: `url`, `models` per weight, `ctx` (context tokens: required for non-Ollama servers, an optional lower cap for Ollama, S05), optional `key` (`env:` only), `self_hosted`, `first_byte_s` |
+| `providers.models.<link>.<weight>` | per S05 | — | the model a link uses for a weight; default: latest in the line, then the prior version |
+| `providers.ctx_floor` | 262144 | — | smallest endpoint context allowed (S05) |
+| `http.ca_bundle` | none | PEM file path | extra trusted certificates, added to the system roots (S06) |
+| `limits.lanes` | 3 | 8 | parallel groups in one run |
+| `limits.machine_lanes` | 6 | 16 | parallel groups across all repos |
+| `limits.link_sessions.<link>` | 3; loopback endpoints 1 | 8 | concurrent sessions per link, across all repos |
+| `limits.group_wall_min` | 30 per task, plus 30 | 240 | wall time per group; paused time doesn't count |
+| `limits.group_tokens` | 2,000,000 | 10,000,000 | tokens per group: input, output and cache writes; cache reads are reported, not counted |
+| `limits.task_attempts` | 6 | 10 | model attempts per task: fresh sessions, re-prompts, gate feedback and "continue" (S18) |
+| `limits.pause_max_min` | 360 | 1,440 | longest a session stays paused on a provider limit before it is cancelled (S18) |
+| `limits.session_wall_min` | per agent (S07) | 120 | wall time per session |
+| `limits.session_idle_min` | 10 | 30 | silence before a nudge |
+| `limits.repairs` | 3 | 5 | repair rounds before Blocked |
+| `sandbox.network` | `deny` | — | network for run-class commands |
+| `sandbox.max_procs` | 512 | 2048 | processes per session |
+| `sandbox.max_mem_gb` | 8 | 32 | memory per session |
+| `cache.max_mb` | 256 | 4096 | cache size per repo |
+| `ledger.retention_days` | 30 | 365 | ledger retention |
+| `ship.mode` | `group` | — | `group`: a PR per group into the epic branch, merged by the engine; `epic`: groups merge straight into the epic branch (S26) |
+| `repos.<id>.agents.<name>` | — | S07 hard limits | per-agent `limits` (wall, idle, retries) and `notes` |
+| `repos.<id>.*` | — | — | any key above, plus `commands.{setup,build,test,lint,format}`, `protected_paths`, `critical_refs` and `hooks` |
+
+**Output profile (accessibility):**
+- **Where it applies:**
+  - Komodo's own human text, and the `report` field;
+  - the 4-heading run report ported from `backups/internal/harness/report.go`;
+  - the rules block install writes into `AGENTS.md`;
+  - the PR body template (S26).
+- **Source:** the `adhd` templates follow `backups/komodo/rules/accessibility.md`; that text, ported as `embed/output/adhd.md`, also goes into the `AGENTS.md` block for the orchestrator's own chat.
+- **Change:** `komodo config set output.profile standard`, then `komodo sync` rewrites the `AGENTS.md` block.
+
+**Env (3 only):**
+
+| Variable | Use | Example |
+|---|---|---|
+| `KOMODO_HOME` | use another home dir (tests, CI) | `KOMODO_HOME=/tmp/k komodo doctor` |
+| `KOMODO_FRESH` | `off` disables the background fresh | `KOMODO_FRESH=off komodo run tg-1.2` |
+| `NO_COLOR` | plain text | `NO_COLOR=1 komodo status` |
+
+Everything else uses a flag, such as `komodo run tg-1.2 --mode economy --set limits.group_tokens=500000`.
+
+**Command detection (`repo/detect.go`), cached by the hash of the marker files:**
+
+| Marker | setup | build | test | lint | format |
+|---|---|---|---|---|---|
+| `go.mod` | `go mod download` | `go build ./...` | `go test ./...` | `go vet ./...` | `gofmt -l .` |
+| `package.json` | `npm ci` | `npm run build` | `npm test` | `npm run lint` | `npm run format` |
+| `Cargo.toml` | `cargo fetch` | `cargo build` | `cargo test` | `cargo clippy` | `cargo fmt --check` |
+| `pyproject.toml` | — | — | `pytest` | `ruff check` | `ruff format --check` |
+| `Makefile` | `make setup` | `make build` | `make test` | `make lint` | `make fmt` |
+
+- **Only what exists:** npm scripts and make targets are used only if they are defined; `npm ci` needs a lockfile.
+- **setup is the engine's:** Intake runs it once per worktree, in the sandbox with network on; no agent can run it. A fresh worktree has no `node_modules`, `.venv` or `target/`.
+- **git-read is always on:** `git status`, `diff`, `log` and `show`.
+- **Override:** `komodo config set --repo commands.test "make check"`, or `--set commands.test=…` for one run. Commands run without a shell, so shell syntax fails `doctor config`. Every command runs in the S13 sandbox.
+
+**`komodo config`:**
+- **`show [--explain]`:** every effective value; `--explain` adds the layer that set it and any limit it hit.
+- **`get <key>`, `set <key> <value>`, `unset <key>`:** writes go to `~/.komodo/config.json`; `--repo` targets this repo's section.
+- **Validate:** `komodo doctor config` decodes and merges without a run.
+
+**Vet:**
+- **Hard limits:** are the numbers in the table right?
+- **Repo id:** origin URL first, so 2 clones of one repo share settings? Default: yes.
+- **Output profile:** default `adhd` on every machine? Default: yes.
+- **Unknown repo types:** with no detected commands, refuse `run` and allow read-only agents? Default: yes.
+- **Keys:** `env:` references only in beta 6, with keychain support later? Default: yes.
+
+**Proof:**
+- **Limits:** a value over a hard limit fails `doctor config`, naming the key and the limit.
+- **Detection:** the fixture repo yields 6 classes.
+- **Explain:** `config show --explain` names a source for every key.
+- **Separation:** 2 repos with different `repos.<id>.mode` values run in parallel, each with its own mode.
+
+## Model I/O layer
+
+### S05 · Provider adapters
+
+**Owns:** `provider/{provider,billing,claude,codex,anthropic,openai}.go`, the probe in `host/probe.go`, `embed/models.json`.
+
+**Does:**
+- **One interface:** `Probe`, `Start(session) → stream`, `Resume(session, input)`. The stream ends in a `Result`: the output, usage (tokens in, out, cache read and write, plus USD) and the resume handle.
+- **Probe at install:** `komodo install` records each link's path, version and login in `state/providers.json`. The billing check below re-reads the login before every session.
+- **Global default chain (every agent):** `claude-cli` first, then the open-source backstop (each free `http:<name>` endpoint in config order), then `anthropic-api` only as `providers.paid` allows.
+- **ChatGPT chain:** `codex-cli`, then `openai-api`, recorded as `not yet` until the later minor.
+- **Schema enforcement:** every link ends like `claude -p`: the model works with tools on `auto`, a text-only reply ends the work, and 1 final call returns the agent's result schema (S08).
+  - **`claude-cli`:** `--json-schema`. **`codex-cli`:** `--output-schema`.
+  - **Claude API (`anthropic-api`):** the final call uses structured outputs (`output_config.format`), with thinking left on. Opus 5.5 and Sonnet 5.5 refuse a forced `tool_choice` with a 400, and toggling thinking voids the message cache.
+  - **OpenAI API (`openai-api`):** the final call sends no tools and `response_format: json_schema` with `strict: true`.
+  - **Ollama and other `http:` endpoints:** the final call sends no tools and the schema as `response_format`; Ollama has no `tool_choice`.
+- **Fallback rule:** a model or link is skipped only when it is unavailable, unauthorized or over its limit, never because a task failed. Each skip is a ledger event `provider_skip {from, to, reason}`.
+
+**Links:**
+
+| Link | Runs as | Auth | Tools via | Beta 6 |
+|---|---|---|---|---|
+| `claude-cli` | `claude -p` at the probed absolute path | the CLI's own login | private MCP server (S08) | ships |
+| `anthropic-api` | HTTPS through S06 | `providers.keys.anthropic` | Go tool loop (S08) | ships |
+| `http:<name>` | OpenAI-compatible HTTP through S06: Ollama, vLLM, llama.cpp, LM Studio, on this machine or a server | optional `key` per endpoint | Go tool loop | ships |
+| `codex-cli` | `codex exec` | the CLI's own login | private MCP server | `not yet` |
+| `openai-api` | HTTPS through S06 | `providers.keys.openai` | Go tool loop | `not yet` |
+
+**HTTP endpoints (`providers.endpoints`):** one adapter (`openai.go`) serves any number of OpenAI-compatible servers.
+
+```json
+"providers": {"endpoints": {
+  "local":   {"url": "http://localhost:11434/v1", "models": {"heavy": "qwen3.6:27b", "light": "qwen3.6:27b"}},
+  "gpu-box": {"url": "https://llm.example.internal/v1", "models": {"heavy": "qwen3-coder:480b"},
+              "ctx": 262144, "key": "env:GPU_BOX_KEY", "self_hosted": true}
+}}
+```
+
+- **Default:** one endpoint, `local`, at `http://localhost:11434/v1`, used only when it answers the probe.
+- **Cost class:** a loopback URL is `free`. Any other URL is `paid` unless it says `"self_hosted": true`, so a hosted service like OpenRouter never runs by accident.
+- **Network:** each endpoint's host joins S06's provider allowlist, and nothing else does.
+- **Probe:** `GET <url>/models` within 1 s at install; each listed model id must be served.
+- **Context is measured, not typed:** before each session the engine reads the context the link actually runs, and every brief and token count uses that number:
+
+| Link | Source |
+|---|---|
+| `claude-cli`, `anthropic-api` | the Models API `max_input_tokens`, else the model's `embed/models.json` entry, else the default window |
+| Ollama | `/api/ps` `context_length` for the loaded model; a model not yet loaded is loaded first with an empty request, then read |
+| Other `http:` servers | the endpoint's `ctx`, required for them |
+
+- **Logged:** each session's measured context goes to the ledger as `ctx_measured`, with its source.
+- **Ollama is detected** at the probe: its server answers `GET /api/version` at the endpoint's host.
+- **`ctx` on an Ollama endpoint:** optional, and only lowers the measured number, never raises it.
+- **Model catalog (`embed/models.json`):** the one list of models Komodo uses by default, about 10 entries:
+  - **Claude:** per weight, the latest and prior IDs, each with its window from Anthropic's docs; Haiku 4.5 is listed at 200K.
+  - **Local:** the recommended `http:` models per weight (Qwen3.6-27B, Gemma 4 31B, Nemotron 3 Nano), with no window, since theirs is measured.
+- **Default window (262,144):** used for any model that is neither measured nor in the catalog, such as a new Claude model on a login with no API key. A smaller window than the real one only makes briefs smaller; a larger one would let a server cut the prompt, so the catalog must list every pinned model whose window is under the default.
+- **Documented in one place:** `doctor` prints the catalog as a table: weight, link, model ID, window, and whether the window was measured or came from the catalog or the default. The ledger records each session's model ID and window, and `status` shows the model each running task is on.
+- **Context floor (`providers.ctx_floor`, 262,144):** applies to `http:` endpoints only; Claude links use their catalog window. It is the native context of the ~27B open models Komodo targets, such as Qwen3.6-27B, and of Kimi K2.6. An endpoint whose measured context is below the floor fails `doctor`, and the engine skips it with `ctx_below_floor` in the ledger. Briefs are never shrunk to fit a smaller window.
+- **Ollama's default:** a server left at its 4,096 default measures below the floor, so `doctor` names the fix: `OLLAMA_CONTEXT_LENGTH=262144` on the server.
+
+**Model failover: open source is always the backstop.** When Claude hits a limit, work moves to an open-source model, never to a paid link first.
+
+| Step | Link | Model per weight |
+|---|---|---|
+| 1 | `claude-cli` | each weight's latest model, then the prior version: heavy `claude-opus-5-5` → `claude-opus-5`, standard `claude-sonnet-5-5` → `claude-sonnet-5`, light `claude-haiku-4-5` (no prior) |
+| 2 (backstop) | each free `http:<name>` endpoint, in config order | the endpoint's `heavy`, `standard`, `light`; a missing weight uses the nearest one |
+| 3 | `anthropic-api` | only under `providers.paid: fallback` or `allowed` |
+
+- **Pinned to latest, prior as backup:** each weight runs the newest model in its line, by exact ID, never an alias. The prior version is the economy and backup link, tried before the open-source backstop.
+- **Where the IDs come from:** the Models API's `line` field when an Anthropic key resolves, else `embed/models.json`. The probe refreshes them on `install`, `doctor` and `fresh`, and writes the exact IDs to `providers.json`, so a run never changes model mid-way.
+- **A line with no current model:** its weight moves to the next line up, so light becomes `sonnet` if Haiku retires with no successor. `doctor` warns.
+- **Any Claude limit** (5-hour window, weekly cap, model cap): the task's next session starts on the backstop.
+- **The backstop is mandatory:** every chain must end in at least one free `http:` endpoint. `doctor` and `gate` refuse a chain without one, and `install` warns when no endpoint answers.
+- **Back to Claude:** after the ledger timer's reset time, new sessions start on `claude-cli` again. A task already running on the backstop finishes there.
+- **Nothing left** (the backstop is down too): pause with the ledger timer below.
+- **Every failover is visible:** a `provider_skip` row plus a ⚠️ warning naming the model the task actually ran on.
+- **Override:** `providers.chains.<agent>` reorders links, and `providers.models.<link>.<weight>` changes the model; neither can remove the backstop.
+
+**Finding `claude`** (macOS, Linux, Windows, WSL):
+- **PATH first:** `exec.LookPath("claude")`, which also finds `claude.exe` on Windows.
+- **Then known paths:** `~/.local/bin/claude`, `%USERPROFILE%\.local\bin\claude.exe`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`.
+- **Launch the launcher:** never a file under `~/.local/share/claude/versions/`, which Claude's updater prunes.
+- **WSL is its own machine:** Windows `komodo.exe` and WSL `komodo` each probe their own side.
+- **Never read credentials:** no Keychain and no `.credentials.json`. Login state comes only from `claude auth status --json`.
+
+**Billing check (`provider/billing.go`): never pay by accident.** A Max plan has no API access, and the API bills per token. Go decides the cost class of each link before each session, and fails closed.
+
+| Cost class | When | Runs? |
+|---|---|---|
+| `subscription` | `claude-cli` whose `auth status` says `authMethod: claude.ai` and `subscriptionType` is `pro`, `max`, `team` or `enterprise` | always |
+| `free` | an `http:` endpoint on loopback, or one marked `self_hosted` | always |
+| `paid` | `anthropic-api`, `openai-api`, `claude-cli` on any non-subscription login, or any other `http:` endpoint | only as `providers.paid` allows |
+
+| `providers.paid` | Effect |
+|---|---|
+| `never` (default) | a paid link is removed from every chain; the run blocks with `paid_refused` and names the key |
+| `fallback` | a paid link runs only after every subscription and free link is skipped |
+| `allowed` | paid links run in chain order |
+
+Three mechanical checks enforce it:
+1. **Before each `claude-cli` session:** `claude auth status --json` (0.1 s) sets the cost class. A logged-out or unknown login is `paid`.
+2. **Env scrub (S13):** `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and `CLAUDE_CODE_USE_*` are removed. In `-p` mode the CLI uses a present key over the Max login. `CLAUDE_CODE_OAUTH_TOKEN` stays; it is a subscription token.
+3. **First stream line:** the `system/init` line must say `apiKeySource: "none"`. Anything else kills the session before its first model turn, with exit `billing`. The field is in the 2.1.291 binary but not in the headless docs, so the probe records one init line per CLI version. A version without the field fails the link at probe time instead of killing every session.
+
+**Limits belong to the provider; Komodo pauses and warns.** Max windows, API spend limits and overage credits are enforced by Anthropic and OpenAI. Komodo adds no cost cap of its own; USD is a beta metric.
+- **Provider halts → backstop, then pause:** on a quota or spend-limit stop, the task's next session starts on the next allowed link (S18). Only with no link left does the halted session pause: it keeps its resume handle, waits for the reset time the provider reported, and the group goes `paused: provider_limit`.
+- **Wait timer on disk:** each halted session's ledger row gets `wait_until` (the reset time plus 1 min) and `wait_link`. The link's reset time also goes to `~/.komodo/state/quota.json`, so every repo on the machine skips that link until then. Both survive a crash or reboot.
+- **Who fires it:** the live engine sleeps until the earliest `wait_until`. If the engine is gone, the startup sweep, `jobs tick` or `status` finds the due timer and resumes the run.
+- **`komodo resume` restarts now:** it attempts every paused agent at once, from its session handle, so no work is lost.
+- **Still limited → wait again:** a refused attempt costs no model turn. The session re-pauses with the provider's new reset time, or backs off 15, 30, then 60 min when none is given.
+- **Pauses end:** paused time stops the wall clocks. At `limits.pause_max_min` (360) the session is cancelled, its WIP commit kept, and the group blocks with `pause_timeout` (S18).
+- **Visible:** `status` shows `paused: provider_limit · claude-cli · resumes 15:31 (in 2h 14m)`. `abandon` clears the timer and ends the group.
+- **Warnings, never stops:**
+  - a provider window passes `warn.quota_pct` (default 90%);
+  - `rate_limit_event` reports `isUsingOverage: true`, so Max is drawing paid credits;
+  - a run's metered USD passes `warn.usd_per_run` (default $5).
+- **Where warnings show:** the `⚠️ Warnings` heading of the run report, `status`, `orch wait`, and a `limit.warn` event (S24).
+- **Visible:** `status`, `doctor` and the run report name the cost class of each link in use, for example `claude-cli: subscription (max)`.
+- **USD as a metric:** metered links ledger `usd`; subscription sessions ledger `total_cost_usd` as notional `usd_equiv`.
+
+**`claude-cli` launch:**
+
+```
+<probed path> -p --output-format stream-json --input-format stream-json --verbose
+  --session-id <uuid>                       # Komodo picks the id
+  --model <weight → model>
+  --system-prompt-file <session>/system.md  # rules + agent prompt (S10, S11)
+  --tools ""                                # native tools off
+  --mcp-config <session>/mcp.json --strict-mcp-config
+  --permission-mode dontAsk                 # a call nothing allows is denied
+  --allowedTools mcp__komodo                # the private tool server, nothing else
+  --setting-sources ""                      # load no Claude settings or CLAUDE.md
+  --json-schema <agent result schema>
+  < brief as one stream-json user message; stdin stays open for S16, closed after the result
+```
+
+- **Resume:** `--resume <uuid>`, with the repair input on stdin.
+- **Why `dontAsk` and `--allowedTools`:** in `-p` mode a call nothing allows is denied, and `--setting-sources ""` loads no allow rules. The prototype passed both.
+- **No `--bare`:** it reads only `ANTHROPIC_API_KEY` and never the Max login.
+- **Why `--setting-sources ""`:** by default `claude` loads `~/.claude/settings.json`, the repo's `.claude/settings*.json` and `CLAUDE.md`. Workers need none of it: Komodo supplies rules (S10), the `AGENTS.md` addendum (S11) and skills (S09) itself. Tested on 2.1.291: `""` fired 0 hooks and ignored a planted `CLAUDE.md`; `user` fired 2 hooks, and `project` obeyed the `CLAUDE.md`.
+
+**Vet:** none open. Decided: Max quota blocks paid fallback; `resume` restarts now and re-waits; open-source `http:` models are the mandatory backstop for every agent, builders included; `--setting-sources ""` is proven.
+
+**Changed by the 2026-10-06 review (re-vet):** the launch flags, the Claude API final call, endpoint `ctx`, the context floor, measured context, latest-plus-prior model pinning, the machine-wide quota file and the pause cap. **Spike:** can the probe capture an init line without spending a model turn?
+
+**Proof:**
+- With `ANTHROPIC_API_KEY` set and a Max login, a `claude-cli` session runs on `apiKeySource: none`, and 0 `anthropic-api` calls are made.
+- With `providers.paid: never` and a faked Max 100% stop, the group pauses, writes `wait_until` to the ledger, makes 0 paid calls, and resumes when the timer fires.
+- `resume` before the reset attempts every paused agent, gets refused, and re-pauses with the new reset time and 0 model turns.
+- `kill -9` on a paused engine, then `jobs tick` after `wait_until`, resumes the run.
+- On the Claude API, a session with thinking on gets a schema-valid final call through structured outputs, with thinking still on.
+- A worker launched with the flags above completes an MCP tool call; with `--allowedTools` removed, the same call is denied.
+- A planted auto-memory file has 0 effect on a worker session.
+- A faked Max stop past `limits.pause_max_min` cancels the session, keeps its WIP commit, and blocks with `pause_timeout`.
+- A faked init line with `apiKeySource: "ANTHROPIC_API_KEY"` is killed before turn 1, exit `billing`.
+- A faked `isUsingOverage: true` event raises one warning and the session finishes.
+- A fixture Ollama whose `/api/ps` reports `context_length: 4096` is skipped with `ctx_below_floor`; one reporting 262,144 takes a brief of 131,072 tokens and refuses 131,073.
+- An Ollama endpoint with `ctx: 65536` set and 262,144 measured sizes briefs to 32,768 tokens and logs both numbers.
+- With no API key, Haiku 4.5 on `claude-cli` sizes to its 200K catalog window and is not skipped by the floor. A Claude ID missing from the catalog sizes to 262,144.
+- `doctor` prints one catalog row per weight and link, each naming its window's source.
+- A faked Max 5-hour limit moves the next session to the backstop endpoint, and 0 `anthropic-api` calls are made.
+- A chain with no free `http:` endpoint fails `gate`.
+- A non-loopback endpoint without `self_hosted` is refused as `paid` under `providers.paid: never`.
+- A planted user hook and a planted `CLAUDE.md` have 0 effect on a worker session, with tools on.
+- A missing link refuses with its reason; a forced quota error on link 1 records a `provider_skip` and finishes on link 2 when it is not paid.
+
+### S06 · HTTP stack
+
+**Owns:** `core/http.go` (new).
+
+**Users:** `anthropic.go`, `openai.go` (the `http:` endpoints), the `web` tool, and `internal fresh-bg`. `claude -p` and `codex` own their own networking.
+
+**Does:**
+- **One client:** shared transport, system TLS roots plus `http.ca_bundle` when set, `HTTPS_PROXY`/`NO_PROXY`, no cookies. Loopback never goes through a proxy.
+- **Streaming:** an SSE reader that feeds S16, so a silent stream trips the idle timer.
+- **Retries:** only on idempotent failure classes, with jittered backoff and `Retry-After` honored.
+- **Limits go to S05:** a 429 with `Retry-After` over 60 s, or a quota error in the body, is not retried. S06 returns it as a limit, and S05 fails over to the backstop or pauses.
+- **Host allowlist per caller:** providers reach their endpoint, `web` only the allowlist and GET, and the fresh updater only the release host.
+- **Redaction:** API keys and every value read from an `env:` reference never reach logs, ledger rows or error text.
+
+| Value | Setting |
+|---|---|
+| Connect / first byte | 10 s / 60 s; loopback endpoints 300 s; per endpoint `first_byte_s` |
+| Stream idle | 90 s, then the stream retry below |
+| Stream drop mid-answer | 1 retry from the start, partial answer discarded; a second failure fails the session |
+| Retry classes | connection reset, 408, 429 (`Retry-After` ≤ 60 s), 500, 502, 503, 504 |
+| Retries | 3, backoff 1 s, 4 s, 16 s ±20%; `Retry-After` up to 60 s |
+| Plain `http://` | loopback, or an endpoint with `self_hosted`, with a ⚠️ warning; anything else needs HTTPS |
+| Custom CA | `http.ca_bundle`: a PEM file added to the system roots; a missing or bad file fails `doctor` |
+| Body cap (non-stream) | 8 MB |
+| Redirects | same host only |
+
+**Vet:** none open. Decided: `http.ca_bundle` ships in beta 6; a dropped stream retries once, then fails the session.
+
+**Proof:** a fake server answering 429 then 200 succeeds on attempt 2. A 429 with `Retry-After: 3600` returns a limit after 1 attempt. A stream cut mid-answer succeeds on the retry; cut twice, the session fails. A planted key and an `env:` endpoint key never appear in any log. A server signed by a test CA fails without `http.ca_bundle` and passes with it. Plain `http://` to a non-loopback host without `self_hosted` is refused. Redirects to a new host are refused.
+
+### S07 · Agent registry
+
+**Owns:** `agent/agent.go`, `embed/agents/*/{agent.json,prompt.md}`.
+
+**Does:**
+- **`agent.json` (Go reads it):** weight, default provider chain, tools, run classes, guard rows, limits, pinned skills, required and optional slots (S11) and an inline result schema; fields a person reads are codes and facts (S10).
+- **Limits are time and retries only:** wall, idle and retries. No turn or token caps; context size is not managed per agent.
+- **Strict decode:** `DisallowUnknownFields`, one Go struct, checked by `doctor` and `gate`.
+- **`prompt.md` (the model reads it):** `# Role` text, never a rule (S10), then a `# Brief` template with `{{slots}}`. Slots fill in one pass, so a filled value is never expanded again. `gate` fails on an unfilled or unknown slot.
+- **Chain:** `agent.json` holds the default. Only `providers.chains.<agent>` overrides it, and S05's backstop check covers both.
+- **Repo overrides:** `repos.<id>.agents.<name>` may change limits and add `notes` (2,000 characters max). The notes become a "Repo notes" section in the prompt. An agent-level limit beats `limits.session_*`.
+
+| Limit | Default | Hard limit |
+|---|---|---|
+| Wall | builder 30 min, others 10 min | 120 min |
+| Idle | 10 min | 30 min |
+| Retries | 2 per session | 3 |
+
+**Roster (Part C):**
+
+| Agent | Weight |
+|---|---|
+| Planner, architect, reviewer | heavy |
+| Builder, researcher | standard |
+| Tester, scout | light |
+
+- **Weight** is the model size: heavy, standard, light map to the latest `opus`, `sonnet` and `haiku` on `claude-cli`, each with its prior version as backup (S05). It is not the verb tier of S01.
+
+**Vet:** none open. Decided: no repo-defined agents in beta 6; 3 weights are enough.
+
+**Proof:** an unknown field, an unfilled slot or an unknown slot fails `gate`. A slot value containing `{{task}}` stays literal. A repo override above a hard limit fails `doctor`. A chain set in `repos.<id>.agents.<name>` is an unknown field.
+
+### S08 · Tool runtime
+
+**Owns:** `tools/*`, `provider/loop.go`.
+
+**Does:**
+- **Registry:** binds the tools in `agent.json` to one session. Unlisted tools are not even advertised (G1).
+- **Private MCP server:** `komodo internal tools --agent --session`, over stdio. It dies with its session, and `--strict-mcp-config` is set.
+- **Harness tool loop:** for API links (Claude API, OpenAI API, Ollama and other `http:` endpoints), Go runs the loop that Claude Code runs for `claude -p`, calling the same tool functions:
+  1. **Tools stay on `auto`:** the model reasons and calls tools freely; thinking stays on.
+  2. **A text-only reply ends the work,** as in Claude Code. No nudge.
+  3. **1 final call** returns only the agent's result schema (per link in S05).
+  4. **The engine checks the result:** schema first (1 re-prompt), then the agent's own gate: `done_when` for a builder, `lint_backlog` for a planner. A failure goes back into the same session with its output; 2 rejected results end it with `check_fail`.
+  5. **A reply cut off at the output limit** gets "continue" once, then ends with `no_result`.
+- **Context limit (API links):** Go counts tokens every turn against the link's measured context (S05). At 80%, old tool outputs shrink to one-line stubs; their full text stays in `<session>/out/`. Still over, the session ends with `no_result`; nothing past the context is sent, so a server never truncates silently.
+- **No result tool mid-session:** the result always comes from the final call, on every link. `prompt.md` says: when finished, stop and summarize.
+- **Shared behavior:** every call passes S12 first. `run` executes inside S13, and output is sanitized and capped.
+- **Repeat reads:** an unchanged file or search returns "unchanged since your last read (N lines)". A second read in a row returns the full content, since compaction may have dropped it.
+
+| Value | Setting |
+|---|---|
+| Tool output cap | 4 KB for every tool except `read`, head and tail kept; the full output goes to `<session>/out/<call>.log`, and the capped reply names that path |
+| `read` cap | 2,000 lines per call, instead of the 4 KB cap |
+| `run` | takes `{class, args[]}`; Go runs that class's command plus the args directly, with no shell (Part C, R1–R4) |
+| `edit` | exact, unique search-and-replace; a miss returns the closest lines; the reply shows the edited lines after `tool.post` formats them |
+| `write` | new files only; an existing file is refused with "use `edit`" |
+| External MCPs | opt-in allowlist per agent, no credentials (final phase) |
+
+**Vet:**
+- **Tool count:** 6 builder tools (Part C). Decided: `edit` and `write` stay separate; `check_task` and `submit_result` drop out, since the engine gates the final result.
+- **`run` streaming:** decided: return only the capped result; the full log stays at the named path.
+
+**Proof:** a builder calling `submit_finding` is refused because it isn't listed. A reviewer calling `edit` is refused. The MCP server exits within 2 s of its session. `write` on an existing file is refused. A 40 KB `run` output leaves its full log at the named path. On each API link, a fixture model that stops with text gets 1 final call and a schema-valid result; a builder whose `done_when` fails continues in the same session. A fixture session that passes 80% of `ctx` stubs old outputs and never sends past `ctx`. A `run` arg of `&&` reaches the command as a literal string.
+
+## Context layer
+
+### S09 · Skill loader
+
+**Owns:** `agent/skills.go`, `embed/skills/*`.
+
+**Does:**
+- **Index:** keyed on name, file globs and repo markers. It covers the 34 `standards-*` skills plus `komodo`, `plan`, `run`, `respond` and `release`.
+- **Harness only:** skills come from `embed/skills/` alone. The repo's `.claude/` is never read.
+- **Allowlist:** an agent's `agent.json` `skills` list is the only set it can be given or pull. `always` names the ones preinjected on every brief (builder and reviewer: `standards-comments`).
+- **Preinject every relevant skill:** a skill loads when its globs match a file in scope and its markers, if any, exist in the repo. No count or token cap.
+- **Pull on demand:** the `skill` tool and `komodo orch skill get` return any allowlisted skill, or one section with `<name>#<section>`. No pull limit; bodies come from the S22 cache.
+- **External sessions:** any Claude Code session can call `komodo orch skill list|get`.
+
+| Value | Setting |
+|---|---|
+| Markers | a skill may require repo markers as well as globs: `standards-ui-mobile` needs `AndroidManifest.xml` or `*.xcodeproj`; `standards-aws` needs `cdk.json`, `samconfig.toml` or an AWS provider in `*.tf` |
+| Glob fixes | `standards-cicd` drops `**/Makefile` |
+| Order | `always` first, then name order, so the prefix is byte-identical across runs |
+| Too big for the link | the brief over S11's limit never drops a skill; the task goes to the next link in its chain, else blocks with `context` |
+
+**Vet:**
+- **Preinject budget:** decided: no cap; every relevant allowlisted skill loads.
+- **Pull limit:** decided: none; repeat pulls come from the cache.
+
+**Proof:** a builder editing `*.go` gets `standards-go` preinjected. A backend `*.kt` in a repo without `AndroidManifest.xml` gets `standards-kotlin` but not `standards-ui-mobile`. A `.tsx` handler gets all 5 matching skills in the same order on 2 runs. A planted `.claude/skills/standards-go/SKILL.md` changes nothing. The index rebuilds only when its key changes.
+
+### S10 · Rules and output contract
+
+**Owns:** `agent/{rules,render}.go`, `embed/rules/orchestrator.md`, `embed/output/**`.
+
+**Does:**
+- **Rules are the harness's, never a worker's prompt:** no rule text goes into any agent brief. The harness enforces each rule where it acts:
+  - **Tool calls:** the guard (S12); a refusal names the rule and the allowed alternative.
+  - **Results:** the result schema (S08). Each field's description states the allowed outcomes, such as `needs_scope` for a file outside `files`.
+  - **Work:** Check (S19) and review (S20).
+  - **Comments:** the `standards-comments` skill, preinjected for builder and reviewer (S09).
+- **Role text is not a rule:** `prompt.md` `# Role` says how to do the job: read neighbours, smallest change, test what you change. It is Markdown in the agent's own folder; `agent.json` holds only what Go reads.
+- **Embedded files:** `embed/rules/orchestrator.md` and every `prompt.md` compile into the binary with `//go:embed`. Nothing is parsed or read from disk at run time.
+- **`orchestrator.md`:** O1–O7 and O9. Install and `sync` render it into the `AGENTS.md` block (S02); no worker brief ever includes it.
+- **Deterministic output:** every word you read comes from a Go template. Models return codes and facts as JSON; the same facts render the same bytes on every run.
+- **Model prose stays internal:** prose fields such as the builder `summary` (used to resume, S18) feed briefs, the ledger and `<session>/out/`. No template renders them.
+- **Fact checks:** Go checks each fact before rendering: a SHA matches the repo, a path is in the diff or worktree, a task ID exists. A failed fact gets the S08 schema re-prompt.
+- **Escaping:** fact strings render as literal code spans, so a fact holding a newline or `## ` cannot change the layout. G4 redaction and G5 run on rendered text.
+- **Unlisted cases:** code `other` renders one fixed line, "Needs a decision; details in `<path>`", with the model's own text in that file.
+- **Code list:** starts from beta 5's real blocks and escalations, PR #335's `branch_missing` among them. A new code is a plan change: schema enum, template and fixture together.
+
+**Output mapping (`embed/output/`):**
+
+| What you read | Facts from | Template |
+|---|---|---|
+| Block or escalation | the agent's `code` plus its facts (SHA, ref, task ID) | `needs.<code>` |
+| PR body | the engine: diff stat, tasks closed, Check results, finding codes | `pr_body` |
+| Reviewer finding on a PR | `{severity, lens, rule, file, line}` | `finding.<lens>` |
+| Architect or researcher result | `{recommend, options[{id, name}]}`, detail in `<session>/out/` | `options` |
+| `status` and run report | `state.json` and the ledger | `status`, `run_report` |
+| Envelope `report` and errors | the verb's `data`; S01's `{code}` | `report.<verb>`, `error.<code>` |
+| Commit message | `<type>: <task title>` from the backlog | `commit` |
+
+**Config:**
+- **`output.profile`:** picks the template set, `embed/output/{adhd,standard}/`. The facts and codes are the same under both; only the layout differs.
+- **`adhd`:** verdict on line one, bold labels, tables for data lists, at most 5 bullets and 3 options, turn-end headings in order (`output.turn_end_summary`).
+- **`output.color`:** applied at render time only.
+- **Fixed per machine:** no repo, flag or `--set` value changes a template.
+
+**Rules:**
+- **The result schema:** asks for codes and facts only, never sentences for a person. The final call (S08) sends it with `code` as an `enum`, so a link can't invent a code (S05 constrained decoding, then Go's check).
+- **`gate` checks the mapping:** every `code` in every agent schema has a template in both profiles, and every template field exists in its schema. An unmapped code fails `gate`.
+- **The orchestrator's own chat:** the only output Komodo cannot render. `orchestrator.md` makes it relay `report` verbatim, and the `AGENTS.md` block carries `embed/output/adhd.md` as its style.
+
+**No leaks:**
+
+| Path | Guard |
+|---|---|
+| Orchestrator rules into a worker | a brief holds only the role text, the repo context (S11), skills and the task; the addendum strips the Komodo block, and broken block markers drop the whole addendum, which `doctor` reports |
+| Orchestrator skills into a worker | `gate` fails if a worker's `agent.json` lists `run`, `plan`, `respond` or `komodo` |
+| Host auto-load | `claude-cli` workers start with `--setting-sources ""` (S05); API links send only the brief; `codex-cli` (later minor) must also load no `AGENTS.md` |
+| A run changing its own guidance | the addendum is read from the base commit, so an `AGENTS.md` edit in a worktree never reaches a running brief; the config a run uses (`~/.komodo/**`, settings files, `embed/policy.json`) is G3 |
+
+**Vet:** none open. Decided: no rule text in any worker prompt; role text and the orchestrator rules stay embedded Markdown; output is codes and facts rendered by Go templates, picked by `output.profile` (S04).
+
+**Changed after approval (re-vet):** rules leave worker prompts; `core.md` and `agent.json` `rules` are dropped (S11 review).
+
+**Proof:** a fixture `status` with 10 runs renders a table and passes its template test. A builder brief holds 0 lines from `embed/rules/`. A planted `AGENTS.md` line outside the block reaches the brief under Repo rules; the same line inside a block with a missing end marker reaches no brief. A builder whose `files` list `AGENTS.md` edits it, and its next brief in the same run still carries the base-commit text. A fixture escalation returning `{code: branch_missing, sha: ffcf41e9}` renders the same bytes on 2 runs under `adhd`. A schema code with no template fails `gate`. A fact path containing a newline and `## x` renders as one literal code span. A fact SHA absent from the repo gets 1 re-prompt.
+
+### S11 · Context and brief builder
+
+**Owns:** `agent/brief.go`, `agent/trim.go`.
+
+**Does:**
+- **Assembly order, most stable first:** tool definitions, role, repo context, standards, then task. The provider's cache reuses only an identical start, so what changes least goes first. No timestamps, IDs or unsorted maps go before the task.
+- **No rules:** no rule text enters a brief (S10).
+- **Slots:** each agent's `agent.json` marks its slots required or optional. An empty required slot fails the brief; an empty optional slot renders `none`.
+- **Trimming:** Go signature trimming, delta-only diffs on re-review, and ANSI and build noise stripped.
+- **Sizing:** the brief must fit in half the link's measured context (S05), read before each session. Over that, it goes to the next link in the chain that fits, as in S09; with none left, the task blocks with `context`.
+- **Repo context:** the repo's `AGENTS.md` minus the Komodo block, read from the group's base commit, under "Repo context". It extends the harness per repo and is never a harness rule; the harness enforces its own limits regardless.
+- **Reviewer context, from the engine only:** the task list from the backlog at the base commit, `done_when`, spec anchors, the diff, Check results (S19) and prior findings. Never builder prose: the builder's `summary` and status reach no reviewer.
+- **Callers:** Go callers of changed symbols come from `go/packages`. Other languages get none preloaded; the reviewer finds callers with its `search` tool.
+
+| Slot | Cap |
+|---|---|
+| Task card | 2 KB |
+| Files in scope | 24 KB, signatures beyond |
+| Diff | 32 KB, delta only on re-review |
+| Check output | 4 KB |
+
+**Vet:** none open. Decided: one ceiling per link, half its measured context, replacing the 4 per-slot caps; the 17-slot list in `drafts/README.md`.
+
+**Proof:** the fixture prefix hashes the same across 2 runs (gate test). An empty required slot fails with the slot named; a reviewer's first pass renders `findings` as `none`. A reviewer brief holds 0 bytes of the builder's `summary`. A Go task and a TS task in one repo share every prefix byte up to the standards.
+
+## Safety layer
+
+### S12 · Guardrails
+
+**Owns:** `guard/*`, `embed/policy.json`.
+
+**Does:**
+- **Every tool call:** checked in-process before it runs, with a table per agent (rows in Part C).
+- **Fails closed:** input it can't parse, an unknown tool or a guard error is a refusal.
+- **Refusals teach:** each refusal names the rule and the allowed alternative.
+- **Refusal limit:** the 3rd identical refusal ends the session (G6).
+- **Orchestrator, any host:** no hook. Rules O1–O7 and O9 are text in the `AGENTS.md` block, rendered from S10's `embed/rules/orchestrator.md`. The harness enforces them on its own side: `orch` verbs refuse leased worktrees and critical refs, and human-only verbs need a terminal.
+
+**Proof:** the guard table test covers every row; malformed input is refused. `orch` verbs given a critical ref or a leased worktree refuse.
+
+### S13 · Sandbox and process control
+
+**Owns:** `core/proc*.go`, `core/sandbox*.go`.
+
+**Three layers, with the OS sandbox last:**
+- **Tool surface (S08):** no native Bash or Edit. This does most of the work.
+- **Process limits:** worktree working directory, an allowlisted environment with no credentials, timeout, output cap, process and memory caps, and a whole-tree kill.
+- **OS sandbox:** wraps every `run` command from the tool server, never the model client.
+
+| OS | Sandbox | Profile |
+|---|---|---|
+| macOS | `sandbox-exec` (seatbelt) | reads allowed; writes only to the worktree, session temp and language caches; network denied except loopback |
+| Linux, WSL | `bwrap` when user namespaces are allowed | `/` read-only; worktree, session temp and language caches writable; `/tmp` tmpfs; `--unshare-net`; `--die-with-parent` |
+| Windows native | Job Object only | no file confinement; `doctor` says so |
+| Later | Docker, behind the same interface | no redesign |
+
+| Value | Setting |
+|---|---|
+| `run` timeout | 10 min per command |
+| Processes / memory | 512 / 8 GB per session, through cgroups (Linux, when delegated) or Job Objects (Windows); none on macOS, and `doctor` says so |
+| Policy | `required` on macOS, `preferred` elsewhere; `preferred` records "guard only" in the ledger |
+
+- **Profiles come from `agent.json`:** read-only agents get no writable mounts.
+- **Loopback always allowed:** blocking it broke the repo's own tests in TG-15.20.
+- **Language caches are writable:** the Go build and module caches, `~/.npm`, `~/.cargo/registry` and the pip cache. `go build` fails on a read-only build cache (tested 2026-10-06).
+- **Never the per-user process limit:** it counts every process you run. This Mac runs 607, so a limit of 512 made `fork` fail (tested).
+- **Dependencies come first:** Intake runs `commands.setup` in the sandbox with network on (S04); `run` keeps network off.
+
+**Vet:**
+- **Linux default:** should `required` also be the default on Linux when `bwrap` is present?
+- **Memory caps:** decided in the 2026-10-06 review: cgroups or Job Objects only; macOS has no cap.
+
+**Proof:** on macOS and Linux, a `run` that writes outside the worktree fails; `go test` binding `127.0.0.1` passes; `go build` in a fresh worktree passes after Intake's setup; on Windows, `doctor` names the guard-only boundary.
+
+## Orchestration layer
+
+### S14 · Orchestration engine
+
+**Owns:** `engine/{engine,stage,intake,build,repair,state}.go`.
+
+**Stages:** `Intake → Build → Check → Review → Repair → Ship`, plus `Blocked`.
+- **Intake (0 tokens):** lint the group, hash its card, order the waves, take the lease, cut the worktree and run `commands.setup` (S04).
+- **Build:** one fresh session per task. After each one, the harness runs that task's `done_when` and commits.
+- **Check, Review, Ship:** S19, S20 and S26.
+- **Repair:** resumes the task's own session with only the verified findings.
+- **Pure core:** `Next(state) → action` has no I/O; `Drive` loops over it and journals each transition.
+
+**Concurrency:**
+- **Groups in parallel:** up to `limits.lanes` lanes, each with its own worktree.
+- **Tasks in sequence:** tasks within a group run one after another in that group's worktree.
+- **Batched by agent:** all builders in a wave run before any reviewer, so provider caches stay warm.
+- **Per link, machine-wide:** `limits.link_sessions.<link>` caps concurrent sessions on each link across all repos; loopback endpoints default to 1. Lane and link slots are lock files in `~/.komodo/state/`, freed when their pid dies.
+
+**Vet:**
+- **`limits.lanes` default:** 3? Max plans rate-limit across sessions.
+- **Tasks in sequence:** do any task groups need parallel tasks inside one group? Default: no.
+
+**Proof:** the fixture group runs all 6 stages and ships; `Next()` has table tests for every stage pair.
+
+### S15 · Workspace and leases
+
+**Owns:** `engine/worktree.go`, `<git-common-dir>/komodo/{wt,leases}/`.
+
+**Does:**
+- **Detached worktree per group** under the git common dir, shared by every checkout.
+- **Branch lease:** a working builder holds its branch. The lease is renewed while the session heartbeats, freed by its push, or expires after 2 h. A paused session holds it up to `limits.pause_max_min` (S18).
+- **Protection (O4):** `orch` verbs refuse a leased worktree, and the `AGENTS.md` rules forbid touching one by hand.
+- **Sweep:** at start, worktrees with no live lease and no unpushed work are removed. Anything unpushed is kept and reported.
+- **Windows paths:** worktree names are short hashes to stay under `MAX_PATH`.
+
+**Vet:**
+- **Lease expiry:** 2 h hard, or 2 h since the last heartbeat? Default: since the last heartbeat.
+- **Unpushed work:** after expiry, does the engine auto-commit it as WIP? Default: yes, on a `wip/` ref.
+
+**Proof:** a second `run` on a leased group refuses with the holder named. Sweep never deletes a worktree with unpushed commits.
+
+### S16 · Session supervisor (subagent control)
+
+**Owns:** `engine/session.go`, `sessions/<id>/`.
+
+**Does:**
+- **Spawn:** starts a provider session with its brief, tool server and sandbox profile, then records `request.json`.
+- **Heartbeat:** any stream event or tool call counts. Silence starts the idle clock.
+- **Time warning and nudge:** injected through `claude -p --input-format stream-json` (stdin stays open) or the next API turn.
+- **Kill:** a whole-tree kill (S13), then `result.json` gets the exit reason.
+- **Exit reasons:** `done`, `needs_scope`, `check_fail`, `no_result`, `schema_fail`, `timeout`, `idle`, `refusals`, `budget`, `provider`, `billing`, `pause_timeout`, `crash`.
+
+| Control | Value |
+|---|---|
+| Wall clock | per agent from `agent.json` (builder 30 min, others 10 min); warning at 80%; stopped while paused |
+| Idle | 10 min, one nudge, 5-min grace, then kill |
+| Retries | per agent from `agent.json` (S07) |
+| Orphans | process groups on Unix, Job Objects on Windows |
+
+**Vet:**
+- **Nudge text:** a fixed line ("Report status or submit now")?
+- **Stream-json mode:** decided in the 2026-10-06 review: yes, stdin stays open (S05 launch). **Spike:** does a message sent mid-turn reach a turn stuck in a tool call, or wait until the turn ends? The docs don't say.
+
+**Follow-up (from the S07 review, apply when S16 is vetted):**
+- **Never ping the model:** liveness comes only from events the engine already receives.
+- **One 15 s timer per session:** it checks wall, idle and the 80% warning, so a nudge or kill lands at most 15 s late.
+- **A running tool counts as alive:** the idle clock pauses during a tool call; S13's 10-min `run` timeout still applies.
+- **Lease renewal every 5 min:** not on every event.
+- **Retries:** S18's "3 per task" for timeout or idle should read the agent's `retries` from `agent.json` (S07).
+
+**Proof:** a forced hang ends with `idle` after the nudge and grace. A forced long task ends with `timeout`, leaving 0 orphan processes.
+
+### S17 · Scheduler and job templates (new)
+
+**Owns:** `engine/schedule.go` (new), `embed/jobs/*.json` and `~/.komodo/jobs/*.json` (new), `komodo jobs`.
+
+**Why:** today everything starts from `komodo run`. Recurring subsets of agents need a clock, saved counters and an overlap rule.
+
+**Does:**
+- **Job template:** names an agent subset, its brief slots, an interval and limits. It is decoded strictly like `agent.json`.
+- **No daemon:** `komodo jobs tick` is idempotent and runs only jobs that are due. Each due job starts a run with id `job-<name>-<n>`, with its own ledger rows and report; `orch wait` takes that id.
+- **Callers:** a launchd, cron or Task Scheduler entry from `install --schedule`. Claude Code `/loop` also works, but spends a model turn on every tick.
+- **Saved counters:** `jobs/state.json` holds `attempt`, `next_at`, `last_fail_hash` and `running`.
+- **Overlap:** a running job holds a lease, so the next tick skips it and logs the skip.
+
+```json
+{
+  "name": "nightly-review",
+  "agents": ["scout", "reviewer"],
+  "slots": {"target": "main..HEAD"},
+  "every": "24h",
+  "retries": 3,
+  "backoff": ["30s", "2m", "8m"],
+  "timeout": "20m"
+}
+```
+
+| Value | Setting |
+|---|---|
+| Minimum interval | 5 min |
+| Retries | 3, backoff 30 s, 2 m, 8 m ±20% |
+| After the last retry | Blocked; wakes `komodo orch wait` |
+
+**Vet:**
+- **OS schedulers:** decided in the 2026-10-06 review: yes, opt-in `install --schedule` in beta 6; `/loop` is the fallback.
+- **Shipped jobs:** ship any default jobs? Default: none; one example under `templates/`.
+
+**Proof:** 2 ticks in one window run the job once. 3 failures end in Blocked and wake `wait`.
+
+### S18 · Error recovery
+
+**Owns:** `engine/limits.go`, `engine/recover.go` (new).
+
+**Principle:** every failure has a detector, an action, a bound and a final state. Nothing loops without a counter.
+
+| Failure | Detector | Action | Bound | Then |
+|---|---|---|---|---|
+| Transient HTTP | S06 | retry with backoff | 3 | session fails |
+| Stream dropped mid-answer | S06 | resend from the start | 1 | session fails |
+| Provider unavailable or unauthorized | S05 | next allowed chain link at the session boundary | chain length | Blocked: `no_provider` |
+| Provider quota or spend limit hit | S05, S06 | next session on the open-source backstop; pause with a `wait_until` timer only when no link is left | until the reported reset, at most `limits.pause_max_min`; `resume` attempts sooner | Paused: `provider_limit`, then resumes; at the cap, Blocked: `pause_timeout`, WIP commit kept |
+| Paid link not allowed, or wrong auth on a subscription link | S05 billing check | kill the session before turn 1; drop the link for the run | 1 | Blocked: `paid_refused` |
+| Schema-invalid result | S08 | one re-prompt | 1 | task retry |
+| Result fails the agent's gate (`done_when`, `lint_backlog`) | S08 | the failure goes back into the same session | 2 | `check_fail`, task retry |
+| Reply cut off at the output limit | S08 | "continue" | 1 | `no_result`, task retry |
+| Timeout or idle | S16 | kill, then a fresh session | 3 per task | Blocked |
+| Identical refusals | S12 | end the session | 3 | task retry |
+| `done_when` fails | S19 | task retry | 3 per task | Blocked |
+| Findings | S19, S20 | repair in the same session | 3 per group | Blocked |
+| Builder needs a file outside scope | S12 B1 refusal | WIP commit, end the session, keep the lease | 1 request per task | Blocked: `needs_scope`, resumes on approve or deny |
+| Flap: same failure hash or zero-diff repair | S18 | stop | 1 | Blocked |
+| Any model attempt on a task: fresh session, re-prompt, gate feedback, "continue" | S18 | count it; the rows above stay inner bounds | `limits.task_attempts` (6) | Blocked: `attempts` |
+| Brief over half the link's measured context | S11 | the next link in the chain that fits (S09) | 1 | Blocked: `context` |
+| Landing conflicts with the epic branch | S26 | merge the epic branch into the group branch, rerun Check | 1 | Blocked: `merge_conflict` |
+| Budget spent | S21 | stop | — | Blocked: `budget` |
+| Harness crash or reboot | S18 | resume from `state.json` | — | continues |
+| Scheduled job fails | S17 | backoff | 3 | Blocked |
+
+- **Crash safety:** `state.json` is written atomically on each transition, and every stage is idempotent.
+- **Startup sweep:** kills orphans by pid file, frees expired leases, and marks dead sessions `crash`.
+- **Block reasons:** a fixed enum, named in `status` and the `group.blocked` event.
+- **Paused is not Blocked:** `paused` waits on a ledger timer and resumes itself; `blocked` needs a person or the orchestrator. Paused time stops the group and session wall clocks, and `limits.pause_max_min` bounds it.
+
+**Vet:**
+- **Auto-retry Blocked:** should a Blocked group retry itself after a cooldown? Default: no; a person or the orchestrator runs `resume`.
+- **Retry provider:** does a task retry move to the next chain link? Default: no, same link.
+
+**Proof:** forcing a timeout, a flap, 4 repairs or 7 attempts each ends Blocked with the reason named. `kill -9` on the engine and then `resume` finishes with 0 repeated paid sessions. A 2-hour pause leaves the group wall clock where it was.
+
+## Quality layer
+
+### S19 · Check (ground truth)
+
+**Owns:** `engine/check.go`.
+
+**Does (0 tokens):**
+- **Reruns** every `done_when` in the sandbox.
+- **Scope:** every changed file is in the group's `files` or is a test sibling (B1).
+- **Scope requests (end and resume):** a builder that needs another file stops, and its final result has status `needs_scope`, the paths and a reason. The engine makes a WIP commit, and the group goes Blocked: `needs_scope`. `orch wait` wakes the orchestrator, and `orch scope approve|deny` answers; approve adds the paths to the group's `files`, logged in the ledger. The engine then resumes the same session with the answer.
+- **The session is never lost:** the resume handle is in `state.json` before the session ends. The lease and worktree stay held while Blocked: `needs_scope`, so the sweep skips them. API links persist every turn to `sessions/<id>/messages.jsonl`. If `--resume` fails or the link changed, a fresh session gets the brief, the WIP diff and the last `summary`, and the ledger logs `resume_lost`.
+- **Secrets:** scans the diff for secret patterns.
+- **Coverage:** measures changed-line coverage.
+- **Cache:** results are keyed by tree hash plus command, so an unchanged tree skips the rerun (S22).
+
+**Vet:**
+- **Coverage bar:** 80% of changed lines? Default: 80% for Go, report-only for other languages.
+- **Scope requests:** decided in the S08 review: end and resume, approved by the orchestrator (or you), logged.
+
+**Proof:** a seeded out-of-scope write fails Check; a planted fake key fails the secret scan. A `needs_scope` then `approve` resumes the same session uuid; with its Claude session file deleted, the fresh session gets the WIP diff and the ledger logs `resume_lost`.
+
+### S20 · Review and evidence
+
+**Owns:** `engine/{review,evidence}.go`, `embed/lenses/*.md`.
+
+**Does:**
+- **Profiles:** thorough runs N lenses in parallel plus a cold pass. Economy runs one merged lens.
+- **Lenses are data:** correctness, security, readiness, quality and economy, as markdown.
+- **Per-task verdicts:** the reviewer returns `met`, `not_met` or `brief_incomplete` for every task ID in the group, each exactly once; Go rejects a result that skips or repeats one.
+- **Added checks:** the reviewer runs the build, tests and lint itself with `run`, beyond `done_when`. The engine reruns any check a verdict depends on.
+- **Back to the builder:** a `not_met` task, a failing check or a blocking finding sends the group to Repair (S18) with the findings.
+- **No bypass:** the reviewer's task list comes from the backlog at the base commit, never from the builder. The builder never writes its own group's backlog files (B2). A builder result that skips a task ID fails the S08 schema check.
+- **Incomplete brief:** `brief_incomplete` blocks the group with `brief`. It is a harness fault and doesn't count against the builder.
+- **Findings:** `submit_finding` takes a rule ID, `file:line` and quoted evidence.
+- **Evidence check:** a finding blocks only if Go finds its quote at that line in the head or the diff. Failing findings are dropped and logged.
+- **Re-review:** after a repair, only the delta is reviewed, and cached findings cost 0 tokens.
+
+**Vet:**
+- **Lens set:** which "more nuanced" lenses to add (API contracts, concurrency, platform parity)?
+- **Severity:** does a `minor` finding ever block? Default: no; only `blocker` and `major` block.
+
+**Proof:** a seeded bug in the fixture is found and verified. A finding with a fake quote is dropped.
+
+## Economy and ops layer
+
+### S21 · Token and resource management
+
+**Owns:** budgets in `engine/limits.go`, savings in `agent/brief.go`, provider caching settings.
+
+**Budgets:**
+
+| Budget | Value |
+|---|---|
+| Group wall time | 30 min per task plus 30, paused time excluded |
+| Per agent | wall, idle and retries from `agent.json` (S07) |
+| Per task | `limits.task_attempts` model attempts (S18) |
+| Lanes | `limits.lanes` per run, `limits.machine_lanes` across repos, `limits.link_sessions.<link>` per link |
+| Mode | economy (1 merged lens) or thorough (N lenses plus a cold pass) |
+
+**Token savings:**
+- **Ported:** slot caps, clipping, signature trimming, glob-picked standards, delta diffs, session resume for repair, briefs that fit the link's `ctx`, 4 KB check output.
+- **New:** a stable prefix, a sanitizer, per-task sessions, and light-weight work on local models.
+- **Provider prompt caching:** `cache_control` breakpoints on the Anthropic API (rules and agent 1 h, skills and repo 5 min). `claude -p` and OpenAI caching are automatic with a byte-identical prefix. Local models keep `keep_alive` for the run.
+- **Headline metric:** tokens and USD per accepted group, plus the cache hit rate per agent.
+
+**Vet:**
+- **Token caps:** keep `limits.group_tokens` as a runaway-loop bound, separate from cost? Default: yes; USD only warns (S05). It counts input, output and cache writes; cache reads are reported only, since each turn re-reads the whole context.
+- **Economy default:** economy or thorough for a new repo? Default: thorough.
+
+**Proof:** a token cap forced low ends Blocked with `budget`; `status` shows the hit rate per agent.
+
+### S22 · Cache store
+
+**Owns:** `core/cache.go`, `<git-common-dir>/komodo/cache/{skills,context,checks,review}/`.
+
+**Does:**
+- **Content-addressed:** every key is `sha256(inputs + binary version)`. Only the hourly release check (S03) uses time.
+- **Outside every worktree,** so G2 keeps agents from reaching or poisoning it.
+- **Verified on read:** a hash mismatch deletes the entry.
+- **Bounded:** 256 MB, least recently used out first; `cache stats|clear`.
+- **Never cached:** build responses, because they are nondeterministic and have side effects.
+
+| Item | Key |
+|---|---|
+| Skill index / bodies | binary version / content hash |
+| Repo profile | hash of marker files |
+| File slices, signature trims | git blob SHA + trim settings |
+| Diff | (base, head) |
+| Brief | hash of every slot input |
+| Check result | tree hash + command |
+| Review findings | lens + diff + prompt hash + model |
+
+**Vet:** **Cap:** 256 MB per repo, or per machine?
+
+**Proof:** a second Check on an unchanged tree skips every rerun; a corrupted entry is deleted, not used.
+
+### S23 · Runtime observability
+
+**Owns:** `engine/ledger.go`, `status`/`wait` in `cli/work.go`, `sessions/<id>/stream.jsonl`.
+
+**Does:**
+- **Session ledger (`sessions.jsonl`):** one row per session, holding id, agent, task, link, model, tokens in/out/cached, USD, wall time and exit reason. A paused session adds `wait_until` and `wait_link` (S05).
+- **Event log (`events.jsonl`):** stage moves, fallbacks, refusals, retries, skips, and Claude Code subagent events.
+- **Live views:** `status [--watch]` shows lanes, stages, budgets and blocks; `wait <run>` blocks until the next wake event.
+- **Session detail:** `status --session <id>` prints the stream tail and result.
+- **Redaction:** keys and secret matches are masked before anything is written.
+
+**Vet:**
+- **Retention:** 30 days or 100 MB per repo, oldest first?
+- **Export:** is an OpenTelemetry export needed later? Default: no; JSONL only.
+
+**Proof:** the fixture run has one ledger row per session, and `wait` returns on `group.blocked`.
+
+### S24 · Event bus and hooks
+
+**Owns:** `engine/hooks.go`, `repos.<id>.hooks` in `~/.komodo/config.json`.
+
+**Events:**
+- **Stages and sessions:** `stage.enter`, `stage.exit`, `session.start`, `session.idle` and `session.timewarn`.
+- **Tools and tasks:** `tool.pre` (guard), `tool.post` (sanitize), `task.done` and `finding.submit`.
+- **Outcomes:** `group.blocked`, `group.shipped` and `run.done`.
+
+**Does:**
+- **Repo hooks:** only on `stage.exit`, `group.shipped` and `run.done`, with allowlisted commands run in the sandbox.
+- **Wakes:** `group.blocked` and `run.done` wake `komodo orch wait`.
+- **Bounded:** each hook gets 60 s, and its output is capped and logged.
+
+**Vet:** **Blocking hooks:** may a repo `stage.exit` hook block a stage? Default: yes, only with exit 1 and a reason line.
+
+**Proof:** a fixture `stage.exit` hook that exits 1 blocks with its reason; a 61-second hook is killed.
+
+## Delivery layer
+
+### S25 · Backlog and planning
+
+**Owns:** `repo/{backlog,lint}.go`, `embed/rules/backlog.md`, the planner agent.
+
+**Does:**
+- **Grammar:** `docs/backlog/epic-N/tg-N.M/{TG.md, tsk-*.md}`, ported from the prototype.
+- **Backlog check:** `komodo doctor backlog` checks the grammar, `files`, `done_when` and dependencies, and that groups in one wave share no `files`. A group whose `files` include a G3 path fails.
+- **`plan <goal>`:** the planner drafts in memory and checks it with `lint_backlog`. Its final result is the plan; the engine lints it again and writes files only if lint passes, else the failure goes back into the session (S08).
+- **`add backlog`:** adds a task, group or epic; out-of-scope work lands here. `add changelog` uses the same verb.
+
+**Vet:** **Grammar changes:** does the backlog grammar need a `subsystem:` field so groups map to S-IDs? Default: yes.
+
+**Proof:** epic-1 passes `komodo doctor backlog`; a planner draft that fails lint writes 0 files; two groups in one wave sharing a file fail lint.
+
+### S26 · Ship: git, PR, release
+
+**Owns:** `engine/ship.go`, `repo/{git,pr,release}.go`.
+
+**Does:**
+- **Only the harness writes git:** commit, branch, push and merge into the epic branch; no agent session has forge credentials. Never force push, `+refspec`, trailers or session links, or writes to critical refs.
+- **Ship (0 tokens):** builds the PR body from the template, which S10's template tests cover. It merges the epic branch into the group branch (no rebase; pushed history is fixed), reruns Check, then lands the group. One lane lands at a time.
+- **`ship.mode`:** `group` opens a PR into the epic branch, and the engine merges it at once. `epic` merges the group straight into the epic branch with `--no-ff`. GitHub won't merge a draft, so group PRs open ready.
+- **Release:** version, tag, cross-built binaries, checksums, ed25519 signature and a changelog that starts fresh at `1.0.0-beta.6`.
+- **Landing:** a person merges only the epic PR into its base; `komodo sync` follows.
+
+**Vet:** **Ship mode default:** `group` or `epic`? Default: `group`, which keeps one PR per group as the record.
+
+**Proof:** a shipped fixture branch has 0 trailers, and its PR body passes the S10 template test. Two lanes landing at once merge one after the other. A seeded conflict blocks with `merge_conflict`.
+
+### S27 · Gate and self-checks
+
+**Owns:** `repo/gate.go`, `guard/table.go`.
+
+**`komodo gate` runs:**
+- **Build and test:** `go vet`, tests, and cross-builds for windows, linux and darwin.
+- **Structure:** import direction, comment lint, and strict decode of every `agent.json` and job template.
+- **Safety:** the guard table and the prefix-hash pin.
+- **Docs drift:** a verb missing from `README.md` or the `komodo` skill, a broken decision link, or an `lld.md` package that doesn't exist.
+- **Maps:** every task group names an S-ID, and every S-ID has an `lld.md` section.
+
+**Vet:** **Gate time:** keep the gate under 3 minutes locally?
+
+**Proof:** each failing case above has a fixture that makes the gate fail.
+
+## Cross-cutting: security
+
+| Threat | Stopped by |
+|---|---|
+| Agent escapes its worktree | S12 (G2), S13 |
+| Agent leaks or reads secrets | S12 (G4), S13 environment allowlist, S19 scan, S06 and S23 redaction |
+| Agent pushes, merges or force-pushes | S08 (no git writes), S12 (R4; O1–O3 as rules), S26 |
+| Tampered binary or stale binary | S03 |
+| Runaway cost or loops | S16, S18, S21 |
+| Poisoned cache | S22 (outside worktrees, verified on read) |
+| Malicious external MCP | S08 allowlist, off by default, no credentials |
+
+---
+
+# Part C: Roster, layout and delivery
+
+## 3. Agent roster: tools, guards and hooks
+
+### Rows every agent inherits
+
+| ID | Refuse |
+|---|---|
+| G1 | A tool that isn't in the agent's set. The server doesn't list it either. |
+| G2 | Reads or writes outside the session worktree, including `..` paths and symlink escapes. |
+| G3 | Writes to protected paths: `.git/config`, `.git/hooks`, `bin/**`, `~/.komodo/**`, `~/.claude/settings*.json`, `.claude/settings*.json`, `embed/policy.json`, `docs/prd.md`. Memory (`~/.claude/projects/*/memory/`) and plans (`~/.claude/plans/`) are never blocked. |
+| G4 | Reads of secret files (`.env*`, `*.pem`, `id_*`, `*.key`), or written content that matches a secret pattern. |
+| G5 | Attribution trailers or session links in any text the agent writes. |
+| G6 | The 3rd identical refusal; it ends the session. |
+
+**Run rows** (any agent with `run`):
+- **R1:** only the declared command classes; `run` takes `{class, args[]}`.
+- **R2:** no shell: Go runs the class's command plus the args directly, so pipes, chains and `sh -c` can't happen.
+- **R3:** no network: the S13 sandbox enforces it.
+- **R4:** no git writes: no class runs git.
+- **R5:** no `--no-verify` (the orchestrator's Bash).
+
+### Orchestrator (the interactive Claude Code session)
+
+Any host: Claude Code now, Codex or a local model later. It uses its host's native tools with no Komodo hook. These rules are text in the `AGENTS.md` block, the same on every host. It may call the `orch` tier and the human verbs marked shared in S01 (O9).
+
+| ID | Refuse |
+|---|---|
+| O1 | Commit, push, merge, delete or force on `main`, `master`, `release/*`, or any critical ref |
+| O2 | Force push, `--force-with-lease`, `+refspec` |
+| O3 | Merging into the epic branch by hand; the engine lands groups (S26) |
+| O4 | Editing, resetting or removing a worktree the harness has leased |
+| O5 | `git stash`; use a WIP commit instead |
+| O6 | `gh pr create` and `gh pr merge`; use `komodo orch pr open` |
+| O7 | Faking a terminal (`script`, `expect`, `unbuffer`) to run a human-only verb (S01) |
+| O9 | A human-only verb (`install`, `uninstall`, `fresh`, `config set`, `run`, `gate --install`, `release`, `doctor --fix`, …) or any `internal` verb |
+| plus | G3, G4, G5, R5 |
+
+### Model agents
+
+| Agent | Tools | Guard beyond G and R | Notes |
+|---|---|---|---|
+| Builder | `read`, `search`, `edit`, `write`, `run`, `skill` | B1: writes only to the group's `files` and test siblings; else the refusal says to stop with result status `needs_scope` (S19). B2: never writes its own group's backlog files, even when listed | `tool.post` formats the edited file |
+| Reviewer | `read`, `search`, `skill`, `diff`, `git_read`, `run` (build, test, lint), `submit_finding` | every write refused | `finding.submit` verifies evidence; one verdict per task (S20) |
+| Planner | `read`, `search`, `skill`, `lint_backlog` | every write refused | the harness writes files only if lint passes |
+| Tester | `read`, `search`, `run` (build and test only) | every write and other run class refused | pass or fail per spec item, with evidence |
+| Architect | `read`, `search`, `skill`, `web` (opt-in, GET) | every write refused | options plus a recommendation |
+| Researcher | same as architect | every write refused | findings with `file:line` |
+| Scout | `read`, `search` (paths only) | every write refused | runs on a local model when its chain allows |
+
+### Engine (no model)
+
+- **Only it runs:** worktree add and remove, the lease, `commands.setup`, `git commit`/`push`/`branch`, Check, the group PR, landing into the epic branch, and release.
+- **It fires:** every event in S24.
+
+## 4. Folder structure
+
+`_test.go` files sit next to their sources and are omitted. Each file is tagged with its subsystem.
+
+**Layout rules (for human maintainers):**
+- **One package per domain, not per concept.** That is 9 packages and about 77 files, down from about 30 packages.
+- **Files split before packages do.** A file splits at about 600 lines; a new package needs a new domain.
+- **Imports flow down one order:** `cli` → `engine` → `host` → `repo` → `provider` → `tools` → `agent` → `guard` → `core`; a package may skip levels. `komodo gate` refuses any import that points up.
+- **Higher needs come in as parameters:** the engine passes backlog lint to `tools`, an event sink to `provider` and `tools`, and filled slots to `agent`. Job templates decode in `agent`, beside `agent.json`.
+- **`cmd/` holds 1 file.** Each verb lives in `internal/cli/` as a thin call into its domain package.
+
+```
+komodo-agentic-factory-coding/
+├── AGENTS.md                      # source of truth: repo rules + Komodo block
+├── CLAUDE.md                      # @AGENTS.md import only
+├── README.md
+├── CONTRIBUTING.md
+├── CHANGELOG.md                   # fresh at 1.0.0-beta.6
+├── PLAN.md                        # this plan; removed once phase 1 lands
+├── LICENSE
+├── go.mod                         # stdlib only
+├── komodo.go                      # //go:embed embed templates
+├── install.sh                     # [S02] macOS/Linux/WSL
+├── install.ps1                    # [S02] native Windows
+├── .github/
+│   └── PULL_REQUEST_TEMPLATE.md
+│
+├── cmd/komodo/
+│   └── main.go                    # [S01] calls cli.Run(os.Args)
+│
+├── internal/
+│   ├── cli/                       # [S01]
+│   │   ├── cli.go                 # verb table, dispatch, envelope, exit codes, pin check
+│   │   ├── help.go                # help + komodo skill generation
+│   │   ├── work.go                # run, status, resume, abandon [S23]
+│   │   ├── orch.go                # orch plan|start|wait|agent|skill|pr
+│   │   ├── jobs.go                # jobs [S17]
+│   │   ├── setup.go               # install, uninstall, fresh, doctor, sync, version
+│   │   ├── config.go              # config [S04]
+│   │   ├── repo.go                # add, gate, release, cache
+│   │   └── internal.go            # internal tools|fresh-bg
+│   │
+│   ├── engine/
+│   │   ├── engine.go              # [S14] Drive: loop over Next()
+│   │   ├── stage.go               # [S14] 6 stages + Blocked, pure Next()
+│   │   ├── intake.go              # [S14] lint, hash card, waves, lease, cut worktree
+│   │   ├── build.go               # [S14] one session per task
+│   │   ├── repair.go              # [S14] resume task session with verified findings
+│   │   ├── state.go               # [S14] state.json, lanes
+│   │   ├── worktree.go            # [S15] detached cut, sweep, lease
+│   │   ├── session.go             # [S16] spawn, heartbeat, warn, nudge, kill
+│   │   ├── schedule.go            # [S17] tick, counters, overlap
+│   │   ├── limits.go              # [S18][S21] retries, repairs, flap, budgets, block reasons
+│   │   ├── recover.go             # [S18] startup sweep, crash resume
+│   │   ├── check.go               # [S19] done_when, scope, secrets, coverage
+│   │   ├── review.go              # [S20] lenses, profiles, re-review delta
+│   │   ├── evidence.go            # [S20] verify a finding against the diff
+│   │   ├── ledger.go              # [S23] sessions, events, redaction
+│   │   ├── hooks.go               # [S24] events, repo hooks, wake
+│   │   └── ship.go                # [S26] PR body, push, group PR, land per ship.mode
+│   │
+│   ├── agent/
+│   │   ├── agent.go               # [S07][S17] agent.json and job template structs, strict load, tighten merge
+│   │   ├── skills.go              # [S09] index, select, get, sections
+│   │   ├── rules.go               # [S10] orchestrator rules into the AGENTS.md block
+│   │   ├── render.go              # [S10] codes and facts to text, per output.profile
+│   │   ├── brief.go               # [S11][S21] slots, stable prefix, caps
+│   │   └── trim.go                # [S11] clip, signatures, diff trim, sanitize
+│   │
+│   ├── provider/
+│   │   ├── provider.go            # [S05] interface, chain, usage
+│   │   ├── loop.go                # [S08] harness tool loop + schema revalidation
+│   │   ├── claude.go              # [S05] claude -p, stream-json
+│   │   ├── codex.go               # [S05] stub refusal until a later minor
+│   │   ├── anthropic.go           # [S05] Messages API, cache_control
+│   │   └── openai.go              # [S05] OpenAI API + http: endpoints (local or server)
+│   │
+│   ├── tools/                     # [S08]
+│   │   ├── tools.go               # registry, bind tools to a session
+│   │   ├── mcp.go                 # stdio MCP server
+│   │   ├── files.go               # read, search, edit, write, repeat-read dedupe
+│   │   ├── run.go                 # run
+│   │   ├── git.go                 # diff, git_read
+│   │   ├── submit.go              # submit_finding, lint_backlog, the final result call
+│   │   └── extra.go               # skill, web
+│   │
+│   ├── guard/                     # [S12]
+│   │   ├── guard.go               # Check → allow | refuse, fail-closed, refusal limit
+│   │   ├── rows.go                # G, R, B, O rows + policy.json
+│   │   ├── paths.go               # containment, symlinks, secret files
+│   │   ├── shell.go               # tokenize, chains, git classifier
+│   │   └── table.go               # [S27] guard table for the gate
+│   │
+│   ├── host/
+│   │   ├── probe.go               # [S02][S05] probe claude, codex, endpoints, keys, sandbox
+│   │   ├── install.go             # [S02] binary, AGENTS.md block, CLAUDE.md, manifest
+│   │   ├── claude.go              # [S02] .claude/settings.json: allow rule, SessionStart hook
+│   │   ├── codex.go               # [S02] Codex detection
+│   │   ├── fresh.go               # [S03] background check, fetch, verify, versioned swap, cleanup
+│   │   ├── schedule.go            # [S17] install --schedule: launchd, cron, Task Scheduler
+│   │   └── doctor.go              # [S03][S04] drift, hook self-test, sandbox, PATH
+│   │
+│   ├── repo/
+│   │   ├── backlog.go             # [S25] grammar, parse, edit
+│   │   ├── lint.go                # [S25] backlog check (doctor backlog)
+│   │   ├── detect.go              # [S04] repo profile + command classes
+│   │   ├── gate.go                # [S27] gate, docs drift, comment lint, S-ID map
+│   │   ├── git.go                 # [S26] git wrapper
+│   │   ├── pr.go                  # [S26] gh wrapper
+│   │   └── release.go             # [S26] version, tag, binaries, checksums, signature
+│   │
+│   └── core/
+│       ├── proc.go                # [S13] run, timeout, output cap, heartbeat
+│       ├── proc_unix.go           # [S13] process groups
+│       ├── proc_windows.go        # [S13] Job Objects
+│       ├── sandbox.go             # [S13] interface, profile from agent.json
+│       ├── sandbox_darwin.go      # [S13] seatbelt
+│       ├── sandbox_linux.go       # [S13] bwrap
+│       ├── sandbox_other.go       # [S13] Job Object only
+│       ├── http.go                # [S06] client, SSE, retry, allowlist, redaction
+│       ├── config.go              # [S04] config.json, repo sections, hard limits, merge
+│       ├── lock.go                # [S05][S14] machine-wide lane and link slots, quota.json
+│       ├── cache.go               # [S22] content-addressed store, LRU
+│       ├── version.go             # [S03] embedded version, semver
+│       ├── fs.go                  # atomic writes, glob
+│       └── testhome.go            # isolated HOME for tests
+│
+├── embed/                         # compiled into the binary; everything a model reads
+│   ├── agents/                    # [S07]
+│   │   └── {builder,reviewer,planner,tester,architect,researcher,scout}/{agent.json, prompt.md}
+│   ├── jobs/                      # [S17] job templates (none shipped by default)
+│   ├── rules/                     # [S10] orchestrator.md; [S25] backlog.md
+│   ├── output/                    # [S10] {adhd,standard}/*.tmpl, adhd.md for the AGENTS.md block
+│   ├── lenses/                    # [S20] correctness, security, readiness, quality, economy
+│   ├── skills/                    # [S09]
+│   │   ├── {komodo,plan,run,respond,release}/SKILL.md
+│   │   └── standards-<name>/SKILL.md            # all 34
+│   ├── defaults.json              # [S04] built-in defaults + hard limits
+│   ├── models.json                # [S05] default models per weight and link, Claude windows
+│   └── policy.json                # [S04][S12]
+│
+├── templates/                     # [S02]
+│   ├── project/{AGENTS.md, CHANGELOG.md, PULL_REQUEST_TEMPLATE.md, docs/{prd,hld,lld}.md}.tmpl
+│   ├── claude/{CLAUDE.md, settings.json}.tmpl
+│   └── jobs/nightly-review.json   # [S17] example
+│
+├── docs/
+│   ├── prd.md  hld.md  lld.md     # lld has one section per S-ID
+│   ├── decisions/{README.md, 0001-standalone-harness.md}
+│   └── backlog/epic-1/{EPIC.md, tg-1.N/{TG.md, tsk-*.md}}
+│
+└── testdata/fixture-repo/         # end-to-end run target
+```
+
+### Runtime state (not committed)
+
+```
+<git-common-dir>/komodo/
+├── install.json                   # [S02]
+├── runs/<group>/state.json        # [S14][S18]
+├── jobs/state.json                # [S17]
+├── wt/<group>/  leases/           # [S15]
+├── sessions/<id>/{brief.md, request.json, stream.jsonl, messages.jsonl, result.json}  # [S16]
+├── ledger/{sessions.jsonl, events.jsonl}   # [S23]
+└── cache/{skills,context,checks,review}/   # [S22] 256 MB LRU
+
+~/.komodo/                         # (%LOCALAPPDATA%\komodo on Windows)
+├── config.json                    # [S04] only after the first config set
+├── bin/komodo                     # [S03] current version; PATH and hooks point here
+├── versions/<v>/komodo            # [S03] every installed version
+├── jobs/*.json                    # [S17] your job templates
+└── state/{providers.json, quota.json, lanes/, links/, fresh.json, fresh.lock, fresh.log, active/}  # [S02][S03][S05][S14]
+```
+
+### What `komodo install` puts in any repo
+
+```
+<repo>/
+├── AGENTS.md                      # created, or Komodo block merged in
+├── CLAUDE.md                      # @AGENTS.md import
+└── .claude/settings.json          # komodo allow rule + SessionStart → komodo status
+```
+
+## 5. Port map (from the prototype in `backups/`)
+
+| Prototype | New home | Subsystems | Action |
+|---|---|---|---|
+| `cmd/komodo/*.go` (about 20 files) | `cmd/komodo/main.go` + `cli/` | S01 | **Rewrite** as a thin verb table |
+| `conductor`, `lease`, `harness/worktree*` | `engine/` | S14, S15 | **Port**; keep the pure `Next()` |
+| `check`, `review` | `engine/` | S19, S20 | **Port**; lenses become data |
+| `ledger` | `engine/ledger.go` | S23 | **Port**; add events and redaction |
+| `harness/brief*`, `clip`, `diff`, `toolkit` | `agent/` | S11 | **Rewrite** with the stable prefix |
+| standards, rules | `agent/`, `embed/` | S09, S10 | **Rewrite**: the loader; rules stay embedded Markdown |
+| `mount/{claude,codex,ollama}` | `provider/`, `tools/` | S05, S08 | **Rewrite** behind one interface |
+| `guard` suites + table | `guard/` | S12 | **Port** the table; fail closed |
+| `install`, `profile`, `preflight`, `doctor` | `host/` | S02, S03, S04 | **Rewrite**, thin |
+| `backlog`, `detect`, `gate`, `git`, `pr`, `release`, `changelog`, `comments` | `repo/` | S04, S25, S26, S27 | **Port** into one package |
+| `proc`, `fsx`, `glob`, `testhome` | `core/` | S13 | **Port**; add Job Objects |
+| 7 roles | `embed/agents/*` | S07 | **Port** to `agent.json` + `prompt.md` |
+| `eval`, `recall`, `plugin`, `facet`, `ingest`, `run`, `harness`, `mount`, `hooks`, `_idea`, `migrate`, `machine` | — | — | **Delete** once surviving code has moved |
+| CHANGELOG, prd/hld/lld, `docs/backlog/epic-*` | — | — | **Restart from zero**; history at `prototype-final` |
+
+**New, with no prototype source:** S06 HTTP stack, S17 scheduler, S18 `recover.go`, S22 cache store, S03 `fresh`.
+
+## 6. Build waves and phases (for agent work)
+
+**Planning rule:** each subsystem is one task group in epic-1 (two if it exceeds about 8 tasks). Groups in a wave have no dependencies on each other, so they can run as parallel lanes.
+
+| Phase | Wave | Subsystems | Exit proof |
+|---|---|---|---|
+| 1 | Design docs | prd, hld, lld (one section per S-ID), ADR 0001, epic-1 | you approve the docs; epic-1 is linted in phase 2 |
+| 2 | Foundations | S01 skeleton, S04, S06, S13, S22, S03 version, S25 lint, S27 gate core; a `claude -p` + MCP tool server spike | core tests pass on 3 OSes; `komodo doctor backlog` passes on epic-1; the spike's worker makes one MCP tool call under the S05 launch flags |
+| 3 | Model surface | S07, S09, S10, S12 | guard table and strict decode pass |
+| 4 | Model I/O | S05 (`claude -p`, local, Anthropic API), S08, S11 | a fixture task finishes through `claude -p` and through a local model |
+| 5 | Runtime | S15, S16, S23, S24 | timeout, idle and kill proofs pass with 0 orphans |
+| 6 | Engine | S14, S18, S19, S21, S26 ship | the fixture group lands on its epic branch |
+| 7 | Quality and scale | S20, S17, S25 planner | review catches the seeded bug; a job ticks once per window |
+| 8 | Edges | S02, S03 fresh, S26 release, S27 docs drift | fresh-repo smoke test on macOS and Windows; `komodo install` in this repo turns on the orchestrator hooks |
+| 9 | User docs, as built, and cutover | README, CONTRIBUTING, AGENTS/CLAUDE, CHANGELOG, templates; the cutover table | docs-drift gate passes; `doctor install` finds 0 stale references |
+
+**Who builds each phase:**
+- **Phases 2–6, by hand:** you and plain Claude Code sessions build each group, with no Komodo hooks. `go vet`, `go test` and the S27 gate core are the check.
+- **Phase 7 on, self-hosted:** `komodo gate --install` puts a dev build at `~/.komodo/bin/komodo`, and beta 6 runs its own groups. A builder takes each task in one fresh session, and a tester takes each exit proof.
+- **Security lens required for:** S02, S03, S06, S08, S12, S13 and S26, even in economy mode. Before phase 7, you review those groups by hand.
+- **Architect:** only for the Vet lines still open when a group starts.
+
+## Bootstrap and cutover: retiring beta 5
+
+**Why beta 5 retires first:** `~/.local/bin/komodo` is a symlink to `~/.komodo/bin/komodo`, the path beta 6 installs to. The global hooks call that path with beta 5 verbs. Beta 6 would answer `komodo guard` with exit 2 (usage), and Claude Code treats exit 2 as a block. Every `Agent`, `Bash`, `Edit` and `Write` call in every repo would be refused.
+
+**Before phase 2:** retire beta 5 with the edits below. Its binary stays on disk, unused, until `gate --install` replaces it in phase 7. Beta 6 never writes `~/.claude`, so these are one-time hand edits.
+
+**`~/.claude/settings.json`:**
+
+| Line | Stale | Before phase 2 |
+|---|---|---|
+| 26 | `Bash(python -m komodo:*)` | removed; nothing runs Python |
+| 114 | `komodo guard` (`PreToolUse`) | removed; nothing replaces it |
+| 124 | `komodo hook status --host claude` | removed; from phase 8 the repo `SessionStart` hook runs `komodo status` |
+| 128 | `komodo hook prune --host claude` | removed; S18's startup sweep prunes |
+| `skillOverrides` | 36 entries: `backlog`, `komodo`, `review` and 33 `standards-*` | removed |
+
+**`~/.claude/skills/`:** delete these 5 before phase 2. Leave `synced/`; it holds Anthropic's skills, not Komodo's.
+
+| Skill | Stale | Replaced in phase 8 by |
+|---|---|---|
+| `komodo` | the beta 5 verb list (`init`, `migrate`, `next`, `brief`, `ingest`, `close`, …) | embedded; `orch skill get komodo` |
+| `plan` | `komodo add EPIC-NN …`, `komodo lint`, `komodo migrate` | embedded; `orch skill get plan` |
+| `run` | `komodo run <group>` in the background, `komodo resume <group>` | embedded; `orch skill get run` |
+| `respond` | `komodo threads`, `komodo gate` | embedded; `orch skill get respond` |
+| `adhoc` | `komodo stage build\|review\|ship`, `komodo metrics` | none; `orch start --stage` in the `run` skill |
+
+**`~/.claude/AGENTS.md`:**
+
+| Line | Stale | Before phase 2 | At cutover (phase 9) |
+|---|---|---|---|
+| 10 | `komodo add` task | a task in `docs/backlog/` | `komodo add backlog --task` |
+| 18 | a `komodo/policy.json` ref | dropped | a critical ref in `embed/policy.json` |
+| 21 | open a PR with `komodo pr create` | `gh pr create` | `komodo orch pr open` |
+| 22 | after a merge, run `komodo sync` | dropped | restored |
+| 24 | `/run <group>` in session, `komodo run <group>` headless | removed | `komodo orch start <group>` |
+
+**Inside this repo (phase 9):**
+
+| File | Stale | Becomes |
+|---|---|---|
+| `.github/PULL_REQUEST_TEMPLATE.md` | `komodo pr create --title … --body-file …` | `komodo orch pr open --title … --body-file …` |
+| `backups/` | every beta 5 verb | unchanged; it is the archive |
+
+**Order:**
+1. **Before phase 2:** apply the "Before phase 2" edits above; phases 2–6 then run in plain Claude Code (§6).
+2. **Phase 7:** `komodo gate --install` puts the beta 6 dev build at `~/.komodo/bin/komodo`.
+3. **Phase 8:** `komodo install` in this repo writes the `AGENTS.md` block, the `CLAUDE.md` import and `.claude/settings.json`.
+4. **Phase 9:** apply the "At cutover" column and the repo table.
+5. **Check:** `komodo doctor install` confirms 0 shadowing binaries and 0 Komodo hooks.
+
+**Gate check:** `doctor install` flags any `~/.claude` file that names a verb missing from `help --json`.
+
+## 7. End-to-end verification
+
+Each card carries its own proof. These checks cross subsystems:
+- **Every phase:** `go run ./cmd/komodo gate` passes, and `GOOS=windows|linux|darwin go build ./...` cross-builds.
+- **Full run:** `komodo install`, then `komodo run tg-fixture` on a local model, ends with the group landed on its epic branch per `ship.mode` and one ledger row per session.
+- **Crash:** `kill -9` mid-run, then `resume`, finishes with 0 repeated paid sessions.
+- **Fresh repo:** following `README.md` on macOS and Windows reaches a shipped fixture group.
+- **Scheduled:** a `tick` from an `install --schedule` entry runs a fixture job, and 3 forced failures end Blocked and wake `wait`.
+
+## Later minor version
+
+- **OpenAI path:** the `codex-cli` provider, the `openai-api` chain link and `.codex/` install.
+- **`komodo chat` (S28):** Komodo's own front end, with an `orchestrator` agent whose only tools are the `orch` verbs. Any chain link, Ollama included, can then orchestrate under the in-process guard. It reuses the S08 loop and its compaction.
+- **Possible:** Docker sandbox, `--global` install, OS-scheduled updates (S03 option D), keychain secrets, and OpenTelemetry export.
+
+## Review changes (2026-10-06)
+
+Facts were checked against Claude Code 2.1.291, its docs, Ollama v0.35.1, Anthropic's API docs and this machine.
+
+| Change | Where |
+|---|---|
+| Worker launch adds `--permission-mode dontAsk`, `--allowedTools mcp__komodo` and stream-json input | S05 |
+| Claude API final call uses structured outputs, with thinking on | S05 |
+| Endpoints declare `ctx`; the harness loop stubs old tool output and never sends past `ctx` | S05, S08, S11 |
+| `run` takes a class and args, with no shell | S08, Part C |
+| Human-only verbs need a terminal; O7 now refuses faked terminals; `gate` is shared except `--install*` | S01, S02, Part C |
+| `orch start --set` can't touch `providers.*`, `sandbox.*` or `http.*`, or raise a limit | S01, S04 |
+| Language caches writable, `commands.setup` at Intake, process caps only via cgroups or Job Objects | S04, S13, S14 |
+| Pauses stop the wall clocks and end at `limits.pause_max_min`; quota and lane slots are machine-wide | S05, S14, S15, S16, S18 |
+| Group wall scales with tasks; `limits.task_attempts`; cache reads don't count as tokens | S04, S18, S21 |
+| The engine lands groups per `ship.mode`; `ship.draft_prs` dropped; groups in one wave share no files | S04, S25, S26, Part C |
+| G3 protects settings files only; memory and plans are never blocked | Part C |
+| Config moves to `core`; imports follow one order, with higher needs passed in | §2, S04, §4 |
+| S25 lint and a `claude -p` spike move to phase 2, `claude -p` to phase 4; beta 6 self-hosts from phase 7 | §6 |
+| Beta 5 retires before phase 2; cutover line numbers corrected | Bootstrap and cutover |
+| `install --schedule` writes OS scheduler entries; `orch wait` defaults to 9m, in the background | S01, S02, S17 |
+| Install writes only `.claude/settings.json` (allow rule, `SessionStart` → `status`) and no `.codex/`; the orchestrator gets `AGENTS.md` rules on every host; O8, `internal guard` and `internal session-start` dropped | S01, S02, S03, S12, Part C, cutover |
+| The orchestrator rules are embedded `orchestrator.md`; models return codes and facts, and Go templates per `output.profile` write every word a person reads; `gate` checks the code-to-template mapping; the repo addendum is read from the base commit | S04, S07, S10, S11, S12, S25, S26, Part C, §4 |
+| No rule text in worker prompts; brief order is tools, role, repo, standards, task; slots are required or optional; the reviewer gets engine facts only, runs checks, and returns one verdict per task | S07, S10, S11, S20, Part C |
+| `embed/models.json` lists default models and Claude windows; unlisted, unmeasured models use 262,144; the floor applies to `http:` endpoints only; endpoint context floor of 262,144; context measured per session from the Models API or Ollama `/api/ps`, typed `ctx` only for other servers; each Claude weight pins its latest model with the prior version as backup | S04, S05, S07 |
+| Text fixes: hourly release check, no `KOMODO_*` layer, `bin/komodo` is a copy, 4 skills, `respond` in the index, 4 KB cap scope, file count | S02, S04, S08, S09, S22, §4 |
+
+## Open items
+
+- **Vet lines:** S01–S11 were approved, but later reviews changed S01, S02, S03, S04, S05, S07, S08 and S10; re-vet those. S12–S27 carry 24 open Vet items, each with a default.
+- **Spikes:** the S05 init-line capture, the S16 mid-turn message, and whether a 24 GB machine runs Qwen3.6-27B at 262,144 context, all before phase 4.
+- **Follow-ups:** S16 carries 5 heartbeat and retry items from the S07 review, applied when S16 is vetted.
+- **Signing key location (S03):** your decision, needed by phase 8.

@@ -1,7 +1,0 @@
-- [ ] **TSK-15.6.1** The escalation session loads its own plugin with the escalate skill
-  - files: `internal/mount/claude/plugin.go`, `internal/mount/claude/session.go`, `internal/mount/claude/plugin_test.go`, `komodo/roles/escalation.md`
-  - accept: Render writes .claude/plugins/escalation holding the escalate skill and the guard hook
-  - accept: a test proves every role the line starts has a rendered plugin directory
-  - done_when: `go test ./internal/mount/claude/...`
-  - context: `today: session.go:40 builds --plugin-dir from req.Role, so the escalation role points at .claude/plugins/escalation, which Render never writes; the escalate skill sits in .claude/plugins/orchestrator, which nothing loads; komodo/roles/escalation.md:3 says the role works through that skill`, `docs/lld.md#escalations`, `Render's plugin table is internal/mount/claude/plugin.go:108-153; the escalation plugin holds the escalate skill and the guard hook only`
-  - priority: C

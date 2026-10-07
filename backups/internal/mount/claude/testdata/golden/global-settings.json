@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.komodo/bin/komodo guard --suite orchestrator",
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent|Bash|Edit|MultiEdit|NotebookEdit|Task|Write"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.komodo/bin/komodo hook status --host claude",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.komodo/bin/komodo hook prune --host claude",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Edit(~/.claude/plans/**)"
+    ]
+  }
+}

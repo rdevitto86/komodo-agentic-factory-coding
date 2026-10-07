@@ -1,5 +1,0 @@
-- [ ] **TSK-16.1.1** Proof: one group runs through the conductor
-  - done_when: `go run ./cmd/komodo report`
-  - owner: human
-  - context: `was TSK-11.19.1`, `promote one READY group, run it with komodo run, and confirm a landing within 60 minutes with zero tokens outside build, review, repair and escalation sessions`, `docs/prd.md#requirements`, `REQ-11, REQ-28, REQ-29 and REQ-31: the ledger for the run shows build, review, repair and escalation sessions only, every stage timed, and the group landing within 60 minutes`, `today: the ledger on this machine holds one run, TG-11.27, which blocked at ship; no line landing is recorded anywhere since 2026-09-29`
-  - priority: H
